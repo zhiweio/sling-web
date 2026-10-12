@@ -225,12 +225,30 @@ clean:
 
 # ---- sling-server workbench (Browser/Server) ----
 
+# Fail fast when running under WSL where node/pnpm resolve to the Windows
+# shims (/mnt/c/...) — those cannot exec node, so every recipe would die
+# with "node: not found" (exit 127). A native Linux/WSL toolchain (node and
+# pnpm installed inside WSL) is unaffected.
+wsl-guard:
+    #!/usr/bin/env bash
+    if grep -qi microsoft /proc/version 2>/dev/null; then
+      for tool in pnpm node npm npx; do
+        p="$(command -v "$tool" 2>/dev/null || true)"
+        if [ -n "$p" ] && [ "${p#/mnt/}" != "$p" ]; then
+          echo "error: '$tool' resolves to a Windows shim inside WSL ($p)." >&2
+          echo "The Windows toolchain cannot run under WSL." >&2
+          echo "Run just from a Windows shell (Git Bash / PowerShell), or install node + pnpm inside WSL for a native Linux build." >&2
+          exit 1
+        fi
+      done
+    fi
+
 # Install frontend dependencies (web/)
-web-install:
+web-install: wsl-guard
     cd web && corepack enable && pnpm install
 
 # Build the frontend (web/dist)
-web-build:
+web-build: wsl-guard
     cd web && pnpm run build
 
 # Frontend checks: i18n key parity + type check
@@ -240,7 +258,7 @@ web-check: web-install
 # Dev mode: two terminals required
 #   1) just web-dev      (Vite :5173, /api proxied to :5666)
 #   2) just dev          (Go server, reverse-proxies Vite)
-web-dev:
+web-dev: wsl-guard
     cd web && pnpm run dev
 
 # Go server dev mode (dev build tag: UI reverse-proxied to Vite :5173)
@@ -273,7 +291,7 @@ release-snapshot:
     goreleaser --snapshot --clean
 
 # E2E tests (Playwright, requires build-server first)
-test-e2e:
+test-e2e: wsl-guard
     #!/usr/bin/env bash
     set -e
     cd e2e && npm ci && npx playwright install chromium && npx playwright test
