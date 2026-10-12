@@ -1,6 +1,8 @@
-// 批量迁移旅程：SQLite 多表源 → 树选择 → 同名映射/批量命名 → 逐流执行
-// 每个测试幂等自建连接（Playwright 在测试超时后会重启 worker 并换新 server 实例，
-// 不能依赖前置测试留下的状态）。
+// Batch migration journey: multi-table SQLite source → tree picker →
+// same-name mapping / bulk naming → per-stream execution.
+// Every test idempotently creates its own connections (Playwright restarts
+// the worker with a fresh server instance after a test timeout, so state
+// from earlier tests cannot be relied upon).
 import { test, expect, type Page } from "../helpers/env"
 import { DatabaseSync } from "node:sqlite"
 import { existsSync } from "node:fs"
@@ -9,7 +11,7 @@ import { join } from "node:path"
 const SRC_CONN = "E2E_BATCH_SRC"
 const TGT_CONN = "E2E_BATCH_TGT"
 
-/** 幂等准备：多表 SQLite 源库 + 源/目标连接 */
+/** Idempotent setup: multi-table SQLite source DB + source/target connections */
 async function ensureBatchConns(slingUrl: string, dataDir: string) {
   const srcDb = join(dataDir, "batch-src.db")
   if (!existsSync(srcDb)) {
@@ -43,53 +45,56 @@ async function ensureBatchConns(slingUrl: string, dataDir: string) {
   }
 }
 
-/** 读取映射表/键表中所有受控 input 的实时值（React 不写 value 属性，须取 property） */
+/** Read the live values of all controlled inputs in the mapping/keys tables
+ * (React does not write the value attribute; the property must be read). */
 async function inputValues(page: Page): Promise<string[]> {
   return page.locator("input[type='text'],input:not([type])").evaluateAll((els) =>
     els.map((el) => (el as HTMLInputElement).value).filter((v) => v !== ""),
   )
 }
 
-test.describe("批量多表迁移", () => {
-  test("批量 3 表默认同名迁移，逐流全部成功", async ({ page, slingUrl, dataDir }) => {
+test.describe("batch multi-table migration", () => {
+  test("batch 3 tables with default same-name mapping, all streams succeed", async ({ page, slingUrl, dataDir }) => {
     await ensureBatchConns(slingUrl, dataDir)
     await page.goto(`${slingUrl}/jobs/new`)
-    await expect(page.getByRole("heading", { name: "新建迁移任务" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "New Migration Job" })).toBeVisible()
 
-    // 步骤 1：树选择器按 schema 分组，勾选 3 张表
+    // Step 1: tree picker grouped by schema; check 3 tables
     await page.getByRole("button", { name: new RegExp(SRC_CONN) }).click()
     await expect(page.getByText("main").first()).toBeVisible({ timeout: 20_000 })
     await page.getByRole("checkbox", { name: /orders/ }).first().click()
     await page.getByRole("checkbox", { name: /customers/ }).first().click()
     await page.getByRole("checkbox", { name: /payments/ }).first().click()
-    await expect(page.getByText(/已选择 3 个数据流/)).toBeVisible()
-    await page.getByRole("button", { name: "下一步" }).click()
+    await expect(page.getByText("3 stream(s) selected")).toBeVisible()
+    await page.getByRole("button", { name: "Next" }).click()
 
-    // 步骤 2：目标连接 + 默认同名（占位符 = 源全名）+ 全部“新建”徽标
+    // Step 2: target connection + default same names (placeholder = source
+    // full name) + all rows badged "New"
     await page.getByRole("button", { name: new RegExp(TGT_CONN) }).click()
     await expect(page.getByPlaceholder("main.orders")).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByText("新建").first()).toBeVisible()
-    await expect(page.getByText(/共 3 张表/)).toBeVisible()
-    await page.getByRole("button", { name: "下一步" }).click()
+    await expect(page.getByText("New", { exact: true }).first()).toBeVisible()
+    await expect(page.getByText("3 tables").first()).toBeVisible()
+    await page.getByRole("button", { name: "Next" }).click()
 
-    // 步骤 3-4：默认全量覆盖 / 默认高级
-    await page.getByRole("button", { name: "下一步" }).click()
-    await page.getByRole("button", { name: "下一步" }).click()
+    // Steps 3-4: default full refresh / default advanced options
+    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { name: "Next" }).click()
 
-    // 步骤 5：保存并运行 + 破坏性守卫
-    await page.getByPlaceholder("例如：订单表每日同步").fill("e2e-batch")
-    await page.getByRole("button", { name: "保存 + 立即运行" }).click()
+    // Step 5: save & run + destructive guard
+    await page.getByPlaceholder("e.g. daily orders sync").fill("e2e-batch")
+    await page.getByRole("button", { name: "Save + Run Now" }).click()
     const confirm = page.getByRole("alertdialog")
     await expect(confirm).toBeVisible()
-    await confirm.getByRole("button", { name: "确认" }).click()
+    await confirm.getByRole("button", { name: "Confirm" }).click()
 
-    // 运行中心等待成功
-    await expect(page.getByRole("heading", { name: "运行中心" })).toBeVisible()
-    await expect(page.getByText("成功").first()).toBeVisible({ timeout: 90_000 })
+    // Runs page: wait for success
+    await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible()
+    await expect(page.getByText("Success").first()).toBeVisible({ timeout: 90_000 })
 
-    // 运行详情：分表明细展示 3 条流（对象名按方言渲染，如 "main"."orders"）
+    // Run detail: the streams section lists all 3 flows (object names quoted
+    // per dialect, e.g. "main"."orders")
     await page.getByRole("button", { name: /e2e-batch/ }).first().click()
-    const streamSection = page.locator("section").filter({ hasText: "分表明细" })
+    const streamSection = page.locator("section").filter({ hasText: "Streams" })
     await expect(streamSection).toBeVisible({ timeout: 10_000 })
     await expect(streamSection.getByText(/orders/)).toBeVisible()
     await expect(streamSection.getByText(/customers/)).toBeVisible()
@@ -97,43 +102,45 @@ test.describe("批量多表迁移", () => {
     await expect(streamSection.getByText(/7 rows|3 rows/)).toBeVisible()
   })
 
-  test("批量命名规则与冲突检测", async ({ page, slingUrl, dataDir }) => {
+  test("bulk naming rules and conflict detection", async ({ page, slingUrl, dataDir }) => {
     await ensureBatchConns(slingUrl, dataDir)
     await page.goto(`${slingUrl}/jobs/new`)
 
     await page.getByRole("button", { name: new RegExp(SRC_CONN) }).click()
     await expect(page.getByText("main").first()).toBeVisible({ timeout: 20_000 })
-    await page.getByRole("button", { name: "全选" }).click()
-    await page.getByRole("button", { name: "下一步" }).click()
+    await page.getByRole("button", { name: "Select all" }).click()
+    await page.getByRole("button", { name: "Next" }).click()
 
     await page.getByRole("button", { name: new RegExp(TGT_CONN) }).click()
     await expect(page.getByPlaceholder("main.orders")).toBeVisible({ timeout: 20_000 })
 
-    // 应用前缀规则 → 占位符被显式值替代
+    // Apply a prefix rule → placeholders are replaced by explicit values
     await page.getByPlaceholder("ods_", { exact: true }).fill("ods_")
-    await page.getByRole("button", { name: "应用到全部" }).click()
+    await page.getByRole("button", { name: "Apply to all" }).click()
     await expect(page.getByPlaceholder("main.orders")).toHaveCount(0)
     await expect(page.getByPlaceholder("main.ods_orders")).toHaveCount(1)
     const values = await inputValues(page)
     expect(values.filter((v) => v.startsWith("main.ods_"))).toHaveLength(3)
 
-    // 冲突检测：把另一行改成同名 → 冲突徽标 + 下一步被阻断
-    // （Playwright 1.64 已移除 getByDisplayValue，按所在行定位输入框）
+    // Conflict detection: rename another row to a duplicate → conflict badge
+    // + Next is blocked (Playwright 1.64 removed getByDisplayValue; locate
+    // the input by its row)
     const customersInput = page.locator("div.border-b").filter({ hasText: "main.customers" }).locator("input")
     await customersInput.fill("main.ods_orders")
-    await expect(page.getByText("目标冲突").first()).toBeVisible()
-    await expect(page.getByRole("button", { name: "下一步" })).toBeDisabled()
+    await expect(page.getByText("Conflict", { exact: true }).first()).toBeVisible()
+    await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()
     await customersInput.fill("main.ods_customers")
-    await expect(page.getByRole("button", { name: "下一步" })).toBeEnabled()
+    await expect(page.getByRole("button", { name: "Next" })).toBeEnabled()
 
-    await page.getByRole("button", { name: "下一步" }).click()
-    await page.getByRole("button", { name: "下一步" }).click()
-    await page.getByRole("button", { name: "下一步" }).click()
-    await page.getByPlaceholder("例如：订单表每日同步").fill("e2e-batch-naming")
-    await page.getByRole("button", { name: "保存", exact: true }).click()
-    await expect(page.getByRole("heading", { name: "迁移任务" })).toBeVisible({ timeout: 10_000 })
+    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByRole("button", { name: "Next" }).click()
+    await page.getByPlaceholder("e.g. daily orders sync").fill("e2e-batch-naming")
+    await page.getByRole("button", { name: "Save", exact: true }).click()
+    await expect(page.getByRole("heading", { name: "Jobs" })).toBeVisible({ timeout: 10_000 })
 
-    // 通过 API 验证保存的 spec：3 条流均带显式 ods_ 目标名
+    // Verify the saved spec via the API: all 3 streams carry explicit ods_
+    // target names
     const resp = await fetch(`${slingUrl}/api/jobs?q=e2e-batch-naming`)
     const body = await resp.json()
     const job = body.jobs?.[0]
@@ -144,22 +151,23 @@ test.describe("批量多表迁移", () => {
     expect(targets).toEqual(["main.ods_customers", "main.ods_orders", "main.ods_payments"])
   })
 
-  test("upsert 批量：逐表主键自动预填", async ({ page, slingUrl, dataDir }) => {
+  test("batch upsert: per-table primary keys prefilled", async ({ page, slingUrl, dataDir }) => {
     await ensureBatchConns(slingUrl, dataDir)
     await page.goto(`${slingUrl}/jobs/new`)
 
     await page.getByRole("button", { name: new RegExp(SRC_CONN) }).click()
     await expect(page.getByText("main").first()).toBeVisible({ timeout: 20_000 })
-    await page.getByRole("button", { name: "全选" }).click()
-    await page.getByRole("button", { name: "下一步" }).click()
+    await page.getByRole("button", { name: "Select all" }).click()
+    await page.getByRole("button", { name: "Next" }).click()
 
     await page.getByRole("button", { name: new RegExp(TGT_CONN) }).click()
     await expect(page.getByPlaceholder("main.orders")).toBeVisible({ timeout: 20_000 })
-    await page.getByRole("button", { name: "下一步" }).click()
+    await page.getByRole("button", { name: "Next" }).click()
 
-    // 切到智能增量更新 → 逐表主键区出现且已按源库主键预填
-    await page.getByRole("button", { name: /智能增量更新/ }).click()
-    await expect(page.getByText("逐表主键 / 增量字段")).toBeVisible()
+    // Switch to Smart Upsert → the per-table keys section appears, prefilled
+    // from the source database primary keys
+    await page.getByRole("button", { name: /Smart Upsert/ }).click()
+    await expect(page.getByText("Per-table keys")).toBeVisible()
     await expect
       .poll(
         async () => {

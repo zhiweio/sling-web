@@ -1,19 +1,23 @@
-// AI 验收智能体：按 acceptance.yaml 规格自主探索产品并产出报告。
+// AI acceptance agent: explores the product autonomously from the
+// acceptance.yaml spec and produces a report.
 //
-// 用法:
+// Usage:
 //   node e2e/ai/run-acceptance.mjs [--url http://127.0.0.1:5666] [--seed]
 //
-// 两层模式:
-//   1) 确定性层(始终执行): 启动带种子数据的服务器, 逐条 spec 断言关键 UI 事实
-//      (复用 Playwright), 生成 JUnit XML + 截图。
-//   2) AI 探索层(可选): 设置 LLM_API_KEY/LLM_BASE_URL 后, 由 LLM 驱动浏览器
-//      按 spec 的 given/when/then 自主走查, 对每条 spec 给出 PASS/FAIL 与诊断。
-//      失败自动附截图, 报告输出到 e2e/.artifacts/ai-acceptance-report.html
+// Two layers:
+//   1) Deterministic layer (always runs): starts a server with seed data,
+//      asserts key UI facts per spec (reuses Playwright), and generates
+//      JUnit XML + screenshots.
+//   2) AI exploration layer (optional): with LLM_API_KEY/LLM_BASE_URL set,
+//      an LLM drives the browser through each spec's given/when/then and
+//      reports PASS/FAIL with diagnostics. Failures attach a screenshot
+//      automatically; the report is written to
+//      e2e/.artifacts/ai-acceptance-report.html
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { parse } from "node:yaml"
+import { parse } from "yaml"
 import { chromium } from "playwright"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -33,40 +37,47 @@ const specPath = resolve(__dirname, "../specs/acceptance.yaml")
 const specs = parse(readFileSync(specPath, "utf-8"))
 
 // ---- deterministic assertions per spec id ----
+// SPA data loads after navigation; wait for the fetches to settle before
+// the one-shot count() assertions.
 const checks = {
   "AC-001": async (page) => {
     await page.goto(base + "/")
-    for (const nav of ["总览", "连接", "迁移任务", "运行中心", "设置"]) {
-      if (!(await page.getByRole("link", { name: nav }).count())) throw new Error(`导航缺少 ${nav}`)
+    await page.waitForLoadState("networkidle")
+    for (const nav of ["Overview", "Connections", "Jobs", "Runs", "Settings"]) {
+      if (!(await page.getByRole("link", { name: nav }).count())) throw new Error(`navigation missing ${nav}`)
     }
-    if (!(await page.getByText("搬运数据行").count())) throw new Error("统计卡缺失")
+    if (!(await page.getByText("Rows moved").count())) throw new Error("stat card missing")
   },
   "AC-003": async (page) => {
     await page.goto(base + "/jobs/new")
-    if (!(await page.getByRole("heading", { name: "新建迁移任务" }).count())) throw new Error("向导未打开")
-    const steps = ["选择数据源", "选择目标", "同步方式", "高级选项", "调度与保存"]
+    await page.waitForLoadState("networkidle")
+    if (!(await page.getByRole("heading", { name: "New Migration Job" }).count())) throw new Error("wizard did not open")
+    const steps = ["Source", "Target", "Sync mode", "Advanced", "Schedule & save"]
     for (const s of steps) {
-      if (!(await page.getByText(s, { exact: true }).count())) throw new Error(`步骤缺失: ${s}`)
+      if (!(await page.getByText(s, { exact: true }).count())) throw new Error(`step missing: ${s}`)
     }
   },
   "AC-004": async (page) => {
     await page.goto(base + "/runs")
-    if (!(await page.getByRole("heading", { name: "运行中心" }).count())) throw new Error("运行中心未渲染")
+    await page.waitForLoadState("networkidle")
+    if (!(await page.getByRole("heading", { name: "Runs" }).count())) throw new Error("runs page not rendered")
   },
   "AC-008": async (page) => {
     await page.goto(base + "/settings")
-    if (!(await page.getByText("界面语言").count())) throw new Error("语言设置缺失")
+    await page.waitForLoadState("networkidle")
+    if (!(await page.getByText("Language").count())) throw new Error("language setting missing")
   },
   "AC-009": async (page) => {
     await page.goto(base + "/")
-    if (!(await page.getByRole("button", { name: "theme" }).count())) throw new Error("主题切换缺失")
+    await page.waitForLoadState("networkidle")
+    if (!(await page.getByRole("button", { name: "theme" }).count())) throw new Error("theme toggle missing")
   },
-  // AC-002/005/006/007/010 由 Playwright specs 或 AI 层覆盖
+  // AC-002/005/006/007/010 are covered by the Playwright specs or the AI layer
 }
 
 // ---- run ----
 const browser = await chromium.launch()
-const page = await browser.newPage({ locale: "zh-CN" })
+const page = await browser.newPage({ locale: "en-US" })
 const results = []
 
 for (const spec of specs) {
@@ -83,10 +94,10 @@ for (const spec of specs) {
     }
   } else if (process.env.LLM_API_KEY) {
     entry.status = "AI"
-    entry.note = "LLM 浏览器走查见报告（配置 LLM_BASE_URL/LLM_API_KEY 启用）"
+    entry.note = "LLM browser walkthrough in report (set LLM_BASE_URL/LLM_API_KEY to enable)"
   }
   results.push(entry)
-  console.log(`[${entry.status}] ${spec.id} — ${spec.feature}`)
+  console.log(`[${entry.status}] ${entry.id} — ${entry.title}`)
 }
 
 await browser.close()
@@ -104,5 +115,5 @@ const xml = [
 writeFileSync(resolve(artifacts, "ai-acceptance.xml"), xml)
 
 const failed = results.filter((r) => r.status === "FAIL").length
-console.log(`\nAI 验收: ${results.filter((r) => r.status === "PASS").length} PASS / ${failed} FAIL / ${results.filter((r) => r.status !== "PASS" && r.status !== "FAIL").length} SKIP`)
+console.log(`\nAI acceptance: ${results.filter((r) => r.status === "PASS").length} PASS / ${failed} FAIL / ${results.filter((r) => r.status !== "PASS" && r.status !== "FAIL").length} SKIP`)
 process.exit(failed > 0 ? 1 : 0)

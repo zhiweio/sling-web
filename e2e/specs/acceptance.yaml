@@ -1,76 +1,78 @@
-# AI 验收规格（Given/When/Then）
-# 驱动方式：
-#   1) Playwright 确定性用例按 spec 生成（specs/*.spec.ts）
-#   2) AI 验收智能体按 spec 自主探索（见 ai/run-acceptance.md），输出 JUnit 报告
-# 每条 spec 必须有 id 与优先级；AI 验收失败会截图 + 附 trace。
+# AI acceptance specs (Given/When/Then).
+# Drivers:
+#   1) Deterministic Playwright cases generated from the specs (specs/*.spec.ts)
+#   2) An AI acceptance agent exploring the product from the specs
+#      (see ai/run-acceptance.mjs), producing a JUnit report.
+# Every spec needs an id and a priority; failed acceptance checks attach a
+# screenshot + trace.
 
 - id: AC-001
   priority: P0
-  feature: 首页总览
-  given: 无任何连接与任务的服务器
-  when: 打开首页
-  then: 侧栏含 总览/连接/迁移任务/运行中心/设置；显示空状态引导卡片；统计卡显示 0
-  then_cn: 非技术用户能看懂"先创建连接"的引导
+  feature: Overview page
+  given: a server with no connections and no jobs
+  when: the home page is opened
+  then: the sidebar shows Overview/Connections/Jobs/Runs/Settings; an empty-state onboarding card is displayed; stat cards show 0
+  then_note: non-technical users understand the "create a connection first" guidance
 
 - id: AC-002
   priority: P0
-  feature: 连接向导
-  given: 已打开连接页
-  when: 依次完成 选择类型(Local File System) → 填写名称/路径 → 点击测试连接
-  then: 显示绿色"连接成功"内联反馈；下一步按钮出现；保存后卡片带"已加密"徽标
+  feature: Connection wizard
+  given: the connections page is open
+  when: completing choose type (Local File System) → fill name/path → click Test Connection
+  then: a green "Connected" inline feedback appears; the Next button shows up; after saving, the card carries an "Encrypted" badge
 
 - id: AC-003
   priority: P0
-  feature: 5 步迁移向导
-  given: 已有 file 源连接与 sqlite 目标连接
-  when: 完成向导 5 步并点击"保存 + 立即运行"
-  then: 弹出破坏性确认（明示将删除并重建的表名）；确认后跳转运行中心
+  feature: 5-step migration wizard
+  given: an existing file source connection and a sqlite target connection
+  when: the wizard's 5 steps are completed and "Save + Run Now" is clicked
+  then: a destructive confirmation appears (naming the tables that will be dropped and recreated); after confirming, the user lands on the Runs page
 
 - id: AC-004
   priority: P0
-  feature: 实时运行监控
-  given: 一个正在运行的任务
-  when: 查看运行中心
-  then: 出现"运行中"卡片且行数/耗时随 SSE 实时刷新；完成后自动转入历史并显示"成功"
+  feature: Live run monitoring
+  given: a running job
+  when: viewing the Runs page
+  then: a "Running" card appears with rows/duration refreshing live over SSE; on completion it moves into history showing "Success"
 
 - id: AC-005
   priority: P1
-  feature: 日志终端
-  given: 一个已完成的运行
-  when: 打开运行详情
-  then: 指标条显示行数/耗时；日志终端显示渲染后的最终文本（含 insert SQL），可搜索与下载
+  feature: Log terminal
+  given: a completed run
+  when: opening the run detail
+  then: the metric bar shows rows/duration; the log terminal shows the final rendered text (including insert SQL), searchable and downloadable
 
 - id: AC-006
   priority: P1
-  feature: 数据正确性
-  given: 源 CSV 含 3 行
-  when: 迁移完成后通过目标连接预览数据
-  then: 目标表存在且恰好 3 行，列名与源一致（可含元数据列）
+  feature: Data correctness
+  given: a source CSV with 3 rows
+  when: the migration finishes and the data is previewed through the target connection
+  then: the target table exists with exactly 3 rows and columns matching the source (metadata columns allowed)
 
 - id: AC-007
   priority: P1
-  feature: 定时调度
-  given: 一个已保存的任务
-  when: 在编辑页启用"每天 09:00"调度并保存
-  then: 任务列表显示调度徽章"每天 09:00"与下次运行倒计时
+  feature: Scheduled runs
+  given: a saved job
+  when: a "daily 09:00" schedule is enabled on the edit page and saved
+  then: the jobs list shows the schedule badge "daily 09:00" plus a countdown to the next run
 
 - id: AC-008
   priority: P2
-  feature: 双语
-  given: 界面为默认中文
-  when: 在设置页切换语言为 English
-  then: 全站文案切换为英文且刷新后保持
+  feature: Bilingual UI
+  given: the UI in its default language (English)
+  when: the language is switched to 简体中文 on the Settings page
+  then: all copy switches to Chinese and persists after a reload
 
 - id: AC-009
   priority: P2
-  feature: 深色模式
-  given: 任意页面
-  when: 点击顶栏主题切换
-  then: 整站切换深/浅色且无样式错乱（侧栏保持深色）
+  feature: Dark mode
+  given: any page
+  when: the top-bar theme toggle is clicked
+  then: the whole app switches light/dark without visual glitches (the sidebar stays dark)
 
 - id: AC-010
   priority: P2
-  feature: 破坏性防误触
-  given: 一个"全量覆盖"模式任务
-  when: 从任务列表点击运行
-  then: 不弹确认（列表直接排队）—— 仅向导首次保存运行时弹确认；危险操作始终可撤销（取消运行按钮可用）
+  feature: Destructive-action guard
+  given: a job in "Full Refresh" mode
+  when: Run is clicked from the jobs list
+  then: no confirmation pops up (the list queues it directly) — confirmation only appears on the wizard's first save-and-run; dangerous actions are always reversible (the cancel-run button works)

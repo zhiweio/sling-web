@@ -1,13 +1,15 @@
-// 测试环境：启动真实 sling-server 二进制（随机端口 + 临时数据目录）
+// Test environment: launches the real sling-server binary (random port +
+// temporary data directory).
 import { test as base, expect } from "@playwright/test"
 import { spawn, type ChildProcess } from "node:child_process"
-import { mkdtempSync, writeFileSync, mkdirSync, existsSync } from "node:fs"
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from "node:fs"
 import { createWriteStream } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-// package.json 为 "type":"module"，Playwright 以 ESM 编译，__dirname 不存在
+// package.json sets "type":"module" so Playwright compiles as ESM and
+// __dirname does not exist; derive it from the module URL instead.
 const thisDir = fileURLToPath(new URL(".", import.meta.url))
 
 export interface SlingFixtures {
@@ -20,7 +22,7 @@ let serverProc: ChildProcess | null = null
 let url = ""
 let dataDir = ""
 
-// 全局单例 server（workers=1 保证串行）
+// Global singleton server (workers=1 keeps tests serial)
 export const test = base.extend<SlingFixtures>({
   slingUrl: async ({}, use) => {
     if (!serverProc) await startServer()
@@ -36,10 +38,6 @@ export const test = base.extend<SlingFixtures>({
 export { expect }
 
 async function startServer() {
-  // Windows 上 Node spawn 对无扩展名路径会自动补 .exe（CreateProcess 行为），
-  // 优先显式选择存在的那个，避免跑错旧构建。
-  const base = resolve(thisDir, "../../cmd/sling-server/sling-server")
-  const bin = process.platform === "win32" && existsSync(base + ".exe") ? base + ".exe" : base
   dataDir = mkdtempSync(join(tmpdir(), "sling-e2e-"))
   mkdirSync(join(dataDir, "data"), { recursive: true })
   writeFileSync(
@@ -47,9 +45,27 @@ async function startServer() {
     "id,name,amount,updated_at\n1,alice,100,2026-01-01\n2,bob,200,2026-01-02\n3,carol,300,2026-01-03\n",
   )
 
-  // 随机端口可能撞上本机常驻实例（如 5888 的 sling-server-full）：spawn 会因
-  // 端口被占而退出，健康检查却可能连到别人的旧进程。避开常用区间 + 检测子进程
-  // 死亡换端口重试 + 健康通过后复核进程仍存活（关掉绑定失败退出前的竞态窗口）。
+  // On Windows, Node's spawn cannot launch an extensionless PE binary
+  // (CreateProcess appends .exe and then fails). Prefer the repo's
+  // sling-server.exe build; fall back to copying the extensionless
+  // artifact to a temp .exe so the suite is never stale-binary dependent.
+  const base = resolve(thisDir, "../../cmd/sling-server/sling-server")
+  let bin = base
+  if (process.platform === "win32") {
+    if (existsSync(base + ".exe")) {
+      bin = base + ".exe"
+    } else if (existsSync(base)) {
+      bin = join(dataDir, "sling-server.exe")
+      copyFileSync(base, bin)
+    }
+  }
+
+  // A random port can collide with a long-running local instance (e.g. a
+  // sling-server on 5888): the spawned child would die on bind while the
+  // health check could reach someone else's old process. Avoid well-known
+  // port ranges + retry on child death with a new port + after health
+  // passes, re-check that the child is still alive (closes the race window
+  // between a failed bind and process exit).
   for (let attempt = 0; attempt < 5; attempt++) {
     const port = 15700 + Math.floor(Math.random() * 200)
     url = `http://127.0.0.1:${port}`
@@ -57,7 +73,8 @@ async function startServer() {
     serverProc = spawn(bin, ["--port", String(port), "--workdir", join(dataDir, "data"), "--no-open"], {
       stdio: ["ignore", "pipe", "pipe"],
     })
-    // 服务端输出落盘，失败时可在临时目录排查（写入 dataDir/../server.log）
+    // Persist server output for debugging on failure (written to
+    // dataDir/../server.log).
     const logStream = createWriteStream(join(dataDir, "server.log"), { flags: "a" })
     serverProc.stdout?.pipe(logStream)
     serverProc.stderr?.pipe(logStream)
