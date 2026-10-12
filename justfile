@@ -3,6 +3,13 @@
 
 set shell := ["bash", "-lc"]
 
+# On Windows, `bash` can resolve to the WSL launcher (System32\bash.exe)
+# when just is invoked from PowerShell/cmd, silently running every recipe
+# inside WSL where the Windows node/go toolchain fails ("node: not found",
+# /mnt/c paths). Pin sh — Git's MSYS sh — for recipe lines on Windows;
+# `shell` above still governs Linux/macOS (upstream CI).
+set windows-shell := ["sh", "-c"]
+
 # Run all tests
 test-all: test-cli test-connections test-dbio test-core test-python test-cdc test-eval
     #!/usr/bin/env bash
@@ -224,31 +231,17 @@ clean:
 
 
 # ---- sling-server workbench (Browser/Server) ----
-
-# Fail fast when running under WSL where node/pnpm resolve to the Windows
-# shims (/mnt/c/...) — those cannot exec node, so every recipe would die
-# with "node: not found" (exit 127). A native Linux/WSL toolchain (node and
-# pnpm installed inside WSL) is unaffected.
-wsl-guard:
-    #!/usr/bin/env bash
-    if grep -qi microsoft /proc/version 2>/dev/null; then
-      for tool in pnpm node npm npx; do
-        p="$(command -v "$tool" 2>/dev/null || true)"
-        if [ -n "$p" ] && [ "${p#/mnt/}" != "$p" ]; then
-          echo "error: '$tool' resolves to a Windows shim inside WSL ($p)." >&2
-          echo "The Windows toolchain cannot run under WSL." >&2
-          echo "Run just from a Windows shell (Git Bash / PowerShell), or install node + pnpm inside WSL for a native Linux build." >&2
-          exit 1
-        fi
-      done
-    fi
+# Workbench recipes use plain lines (no #!/usr/bin/env bash shebangs): on
+# Windows just translates shebang interpreter paths via cygpath, which is
+# only on PATH inside Git Bash. Plain lines run under windows-shell (sh)
+# everywhere, so PowerShell and Git Bash behave the same.
 
 # Install frontend dependencies (web/)
-web-install: wsl-guard
+web-install:
     cd web && corepack enable && pnpm install
 
 # Build the frontend (web/dist)
-web-build: wsl-guard
+web-build:
     cd web && pnpm run build
 
 # Frontend checks: i18n key parity + type check
@@ -258,29 +251,17 @@ web-check: web-install
 # Dev mode: two terminals required
 #   1) just web-dev      (Vite :5173, /api proxied to :5666)
 #   2) just dev          (Go server, reverse-proxies Vite)
-web-dev: wsl-guard
+web-dev:
     cd web && pnpm run dev
 
 # Go server dev mode (dev build tag: UI reverse-proxied to Vite :5173)
 dev:
-    #!/usr/bin/env bash
-    set -e
     go run -tags dev ./cmd/sling-server --no-open --port 5666
 
-# Build the single binary (frontend embedded)
+# Build the single binary (frontend embedded). Windows: Node's spawn (used
+# by e2e) cannot launch an extensionless PE binary, so emit sling-server.exe.
 build-server: web-build
-    #!/usr/bin/env bash
-    set -e
-    echo "Building sling-server (embedded UI)..."
-    # Windows: Node's spawn (used by e2e) cannot launch an extensionless
-    # PE binary, so produce sling-server.exe there.
-    if [[ "${OS:-}" == "Windows_NT" ]]; then
-        go build -p 1 -ldflags="-s -w" -o cmd/sling-server/sling-server.exe ./cmd/sling-server
-        ./cmd/sling-server/sling-server.exe version
-    else
-        go build -p 1 -ldflags="-s -w" -o cmd/sling-server/sling-server ./cmd/sling-server
-        ./cmd/sling-server/sling-server version
-    fi
+    if [ "${OS:-}" = "Windows_NT" ]; then go build -p 1 -ldflags="-s -w" -o cmd/sling-server/sling-server.exe ./cmd/sling-server && ./cmd/sling-server/sling-server.exe version; else go build -p 1 -ldflags="-s -w" -o cmd/sling-server/sling-server ./cmd/sling-server && ./cmd/sling-server/sling-server version; fi
 
 # sling-server unit tests
 test-server:
@@ -291,7 +272,5 @@ release-snapshot:
     goreleaser --snapshot --clean
 
 # E2E tests (Playwright, requires build-server first)
-test-e2e: wsl-guard
-    #!/usr/bin/env bash
-    set -e
+test-e2e:
     cd e2e && npm ci && npx playwright install chromium && npx playwright test
