@@ -2,6 +2,8 @@
 package server
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -41,7 +43,7 @@ func (a *App) handleConnsGet(w http.ResponseWriter, r *http.Request) {
 	props := rec.Props()
 	for _, f := range rec.SecretFieldList() {
 		if _, ok := props[f]; ok {
-			props[f] = "******"
+			props[f] = secretMask
 		}
 	}
 	body := map[string]any{
@@ -180,12 +182,88 @@ func (a *App) handleConnsPrimaryKeys(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"keys": keys})
 }
 
+// handleConnsImport previews (dry_run) or commits an import. Sources:
+// uploaded YAML/JSON content, or the machine's sling environment
+// (source="env"; also the legacy body-less call). Existing names are
+// skipped unless on_conflict="overwrite".
 func (a *App) handleConnsImport(w http.ResponseWriter, r *http.Request) {
-	dryRun := r.URL.Query().Get("dry") == "1"
-	imported, err := a.Conns.ImportEnvYAML(dryRun)
+	var in struct {
+		Content    string   `json:"content,omitempty"`
+		Source     string   `json:"source,omitempty"` // "env" to scan the machine's sling environment
+		DryRun     bool     `json:"dry_run,omitempty"`
+		Names      []string `json:"names,omitempty"`
+		OnConflict string   `json:"on_conflict,omitempty"` // skip (default) | overwrite
+	}
+	raw, err := io.ReadAll(r.Body)
+	defer r.Body.Close()
 	if err != nil {
 		apiErr(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"imported": imported})
+	if len(raw) > 0 {
+		if err = json.Unmarshal(raw, &in); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+	}
+	if len(in.Content) > 1<<20 {
+		writeErr(w, http.StatusBadRequest, "content too large (max 1MB)")
+		return
+	}
+	if in.OnConflict == "" {
+		in.OnConflict = "skip"
+	}
+	if in.OnConflict != "skip" && in.OnConflict != "overwrite" {
+		writeErr(w, http.StatusBadRequest, "on_conflict must be skip or overwrite")
+		return
+	}
+
+	if in.DryRun {
+		var found []ImportEntry
+		if in.Source == "env" {
+			found, err = a.Conns.PreviewImportEnv()
+		} else if in.Content == "" {
+			writeErr(w, http.StatusBadRequest, "content is required")
+			return
+		} else {
+			found, err = a.Conns.PreviewImportContent(in.Content)
+		}
+		if err != nil {
+			apiErr(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"found": found})
+		return
+	}
+
+	var imported, skipped []string
+	if in.Content != "" {
+		imported, skipped, err = a.Conns.ImportContent(in.Content, in.Names, in.OnConflict)
+	} else {
+		imported, skipped, err = a.Conns.ImportEnv(in.Names, in.OnConflict)
+	}
+	if err != nil {
+		apiErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"imported": imported, "skipped": skipped})
+}
+
+// handleConnsExport downloads every managed connection with secrets
+// masked; the document can be re-imported here or dropped into env.yaml.
+func (a *App) handleConnsExport(w http.ResponseWriter, r *http.Request) {
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "yaml"
+	}
+	if format != "yaml" && format != "json" {
+		writeErr(w, http.StatusBadRequest, "format must be yaml or json")
+		return
+	}
+	name, body, count, err := a.Conns.ExportConns(format)
+	if err != nil {
+		apiErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"name": name, "body": body, "count": count})
 }

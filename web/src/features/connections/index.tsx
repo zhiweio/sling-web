@@ -23,6 +23,8 @@ import {
 import { api } from "@/lib/api"
 import type { ConnTypeDef, Connection, ConnectionDetail } from "@/lib/types"
 import { PageHeader } from "@/features/dashboard"
+import { ImportDialog } from "./import"
+import { ExportButton } from "./export"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -51,6 +53,7 @@ export default function Connections() {
   const [sort, setSort] = useState("name")
   const [page, setPage] = useState(0)
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Connection | null>(null)
 
   const { data: conns, isLoading } = useQuery({ queryKey: ["conns"], queryFn: api.listConns })
@@ -92,7 +95,10 @@ export default function Connections() {
         subtitle={t("connections.subtitle")}
         actions={
           <>
-            <ImportButton />
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="size-4" /> {t("app.actions.import")}
+            </Button>
+            <ExportButton count={(conns ?? []).length} />
             <Button onClick={() => setWizardOpen(true)}>
               <Plus className="size-4" /> {t("app.actions.newConnection")}
             </Button>
@@ -190,6 +196,8 @@ export default function Connections() {
         />
       )}
 
+      <ImportDialog open={importOpen} onOpenChange={setImportOpen} />
+
       {selected && <ConnDetail name={selected} />}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
@@ -277,30 +285,6 @@ function DeleteConfirm({ conn, onDone }: { conn: Connection | null; onDone: () =
     >
       {t("app.actions.delete")}
     </AlertDialogAction>
-  )
-}
-
-function ImportButton() {
-  const { t } = useTranslation()
-  const qc = useQueryClient()
-  const imp = useMutation({
-    mutationFn: () => api.importConns(),
-    onSuccess: (res) => {
-      const imported = res.imported ?? []
-      if (imported.length > 0) {
-        toast.success(t("connections.importSuccess", { count: imported.length, names: imported.join(", ") }))
-        qc.invalidateQueries({ queryKey: ["conns"] })
-      } else {
-        toast.info(t("connections.importNone"))
-      }
-    },
-    onError: (e) => toast.error(e.message),
-  })
-  return (
-    <Button variant="outline" onClick={() => imp.mutate()} disabled={imp.isPending}>
-      {imp.isPending ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-      {t("app.actions.import")}
-    </Button>
   )
 }
 

@@ -7,6 +7,9 @@ import type {
   ConnectionDetail,
   ConnTypeDef,
   DiscoverResult,
+  ExportResult,
+  ImportCommitResult,
+  ImportEntry,
   Job,
   JobVersion,
   LogLine,
@@ -69,7 +72,15 @@ export const api = {
     }),
   preview: (name: string, table: string, limit = 50) =>
     req<PreviewData>(`/conns/${encodeURIComponent(name)}/preview?table=${encodeURIComponent(table)}&limit=${limit}`),
-  importConns: () => req<{ imported: string[] }>("/conns/import", { method: "POST" }),
+  previewImportConns: (content: string) =>
+    req<{ found: ImportEntry[] }>("/conns/import", { method: "POST", body: JSON.stringify({ content, dry_run: true }) }),
+  previewImportEnv: () =>
+    req<{ found: ImportEntry[] }>("/conns/import", { method: "POST", body: JSON.stringify({ source: "env", dry_run: true }) }),
+  importConns: (content: string, names: string[], onConflict: "skip" | "overwrite") =>
+    req<ImportCommitResult>("/conns/import", { method: "POST", body: JSON.stringify({ content, names, on_conflict: onConflict }) }),
+  importEnvConns: (names: string[], onConflict: "skip" | "overwrite") =>
+    req<ImportCommitResult>("/conns/import", { method: "POST", body: JSON.stringify({ source: "env", names, on_conflict: onConflict }) }),
+  exportConns: (format: "yaml" | "json") => req<ExportResult>(`/conns/export?format=${format}`),
 
   /* jobs */
   listJobs: (q = "") => req<{ jobs: Job[]; total: number }>(`/jobs${q ? `?q=${encodeURIComponent(q)}` : ""}`),

@@ -58,6 +58,30 @@ export interface TestResult {
   ms: number
 }
 
+// One connection candidate parsed from an import payload (file/paste or
+// environment scan). Secret values are never included — field names only.
+export interface ImportEntry {
+  name: string
+  type: string
+  source?: string
+  exists: boolean
+  valid: boolean
+  error?: string
+  secret_fields?: string[]
+  masked_secret?: boolean
+}
+
+export interface ImportCommitResult {
+  imported: string[]
+  skipped: string[]
+}
+
+export interface ExportResult {
+  name: string
+  body: string
+  count: number
+}
+
 export interface StreamSpec {
   name?: string
   source_object?: string

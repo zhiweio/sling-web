@@ -128,6 +128,7 @@ func (a *App) Handler() http.Handler {
 	// connections
 	mux.HandleFunc("GET /api/conns", a.handleConnsList)
 	mux.HandleFunc("GET /api/conns/types", a.handleConnTypes)
+	mux.HandleFunc("GET /api/conns/export", a.handleConnsExport)
 	mux.HandleFunc("GET /api/conns/{name}", a.handleConnsGet)
 	mux.HandleFunc("POST /api/conns", a.handleConnsCreate)
 	mux.HandleFunc("PUT /api/conns/{name}", a.handleConnsUpdate)

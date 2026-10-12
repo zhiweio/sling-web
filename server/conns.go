@@ -779,60 +779,384 @@ func (cs *ConnService) PreviewRows(name, object string, limit int) (cols []map[s
 	return cols, rows, nil
 }
 
-/* -------------------------------- import --------------------------------- */
+/* ------------------------------ import/export ------------------------------ */
 
-// ImportEnvYAML imports connections found in env.yaml / environment
-// variables into the encrypted store so the vault becomes the source of
-// truth. Existing managed connections are left untouched.
-func (cs *ConnService) ImportEnvYAML(dryRun bool) (imported []string, err error) {
-	imported = []string{} // non-nil so JSON renders [] not null
-	// discover without our materialized conns shadowing the file
+// secretMask is the placeholder shown for secret values. Imported values
+// equal to it mean "no value provided" and never overwrite a stored secret.
+const secretMask = "******"
+
+// ImportEntry is one connection candidate for import — from an uploaded
+// file/paste or an environment scan. Secret values are never included;
+// only field names.
+type ImportEntry struct {
+	Name         string   `json:"name"`
+	Type         string   `json:"type"`
+	Source       string   `json:"source,omitempty"` // env-scan provenance
+	Exists       bool     `json:"exists"`           // a managed connection already uses this name
+	Valid        bool     `json:"valid"`            // parsed into a usable connection
+	Error        string   `json:"error,omitempty"`  // why the entry is invalid
+	SecretFields []string `json:"secret_fields"`    // names only, never values
+	MaskedSecret bool     `json:"masked_secret"`    // value was the ****** placeholder
+}
+
+// normConnName mirrors the name normalization Upsert applies so previews
+// show the final stored name.
+func normConnName(name string) string {
+	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(name), " ", "_"))
+}
+
+// parseImportContent parses uploaded YAML/JSON content into raw connection
+// prop maps. Both the `connections:`-wrapped document sling uses and a bare
+// top-level {NAME: {...}} map are accepted; in the bare form only entries
+// that look like connections (a type/url key, or a URL string) are kept so
+// unrelated env.yaml blocks (`env:`, `variables:`) are not mistaken for
+// connections.
+func parseImportContent(content string) (map[string]map[string]any, error) {
+	var root map[string]any
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
+		return nil, g.Error(err, "could not parse file (expected YAML or JSON)")
+	}
+	wrapped, hasWrapper := root["connections"].(map[string]any)
+	entries := root
+	if hasWrapper {
+		entries = wrapped
+	}
+	out := map[string]map[string]any{}
+	for name, v := range entries {
+		if strings.HasPrefix(name, "$") {
+			continue // $secret references are not connections
+		}
+		switch t := v.(type) {
+		case map[string]any:
+			if !hasWrapper {
+				_, hasType := t["type"]
+				_, hasURL := t["url"]
+				if !hasType && !hasURL {
+					continue
+				}
+			}
+			out[name] = t
+		case string:
+			if strings.Contains(t, "://") {
+				out[name] = map[string]any{"url": t} // bare URL-form entry
+			} else if hasWrapper {
+				out[name] = map[string]any{} // scalar inside connections:; reported invalid
+			}
+		default:
+			if hasWrapper {
+				out[name] = map[string]any{}
+			}
+		}
+	}
+	return out, nil
+}
+
+// importInput builds an UpsertInput from a discovered connection's data.
+// Secret values ride in props for Upsert to encrypt into the vault; the
+// type/url keys are dropped (setURL already extracted discrete fields, and
+// url embeds credentials in plaintext). Masked secret placeholders are
+// dropped so they never overwrite (or fake) a stored secret.
+func importInput(name, connType string, data map[string]any, description string, tags []string) (in UpsertInput, secrets []string, masked bool) {
+	props := map[string]any{}
+	for k, v := range data {
+		if k == "type" || k == "name" || k == "url" || k == "description" || k == "tags" {
+			continue
+		}
+		if v == nil {
+			continue
+		}
+		sv := ""
+		switch t := v.(type) {
+		case string:
+			sv = t
+		default:
+			sv = fmt.Sprint(v)
+		}
+		if isSecretField(connType, k) {
+			switch sv {
+			case "":
+				continue
+			case secretMask:
+				masked = true
+				continue
+			}
+			props[k] = sv
+			secrets = append(secrets, k)
+			continue
+		}
+		props[k] = v
+	}
+	sort.Strings(secrets)
+	return UpsertInput{
+		Name:        normConnName(name),
+		Type:        normalizeConnType(connType),
+		Description: description,
+		Tags:        tags,
+		Props:       props,
+	}, secrets, masked
+}
+
+// connMeta extracts the workbench meta fields (description, tags) an entry
+// may carry so they survive a round-trip export → import.
+func connMeta(data map[string]any) (description string, tags []string) {
+	description = cast.ToString(data["description"])
+	for _, t := range cast.ToSlice(data["tags"]) {
+		if s := strings.TrimSpace(cast.ToString(t)); s != "" {
+			tags = append(tags, s)
+		}
+	}
+	return
+}
+
+// parsedImport pairs a preview entry with the UpsertInput that would store
+// it, so preview and commit share one parse.
+type parsedImport struct {
+	entry ImportEntry
+	input UpsertInput
+}
+
+// knownConnType reports whether a type string is usable: recognized by
+// dbio or present in the properties catalog (e.g. the catalog's "local").
+func knownConnType(t string) bool {
+	if _, ok := dbio.ValidateType(t); ok {
+		return true
+	}
+	cats, err := ConnTypeCatalog()
+	if err != nil {
+		return true // catalog unavailable; let Upsert be the judge
+	}
+	for _, c := range cats {
+		if strings.EqualFold(c.Type, t) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseImport parses uploaded content into import candidates. Invalid
+// entries are reported (not dropped) so the UI can show why they failed.
+func (cs *ConnService) parseImport(content string) ([]parsedImport, error) {
+	raw, err := parseImportContent(content)
+	if err != nil {
+		return nil, err
+	}
+	envMap := map[string]any{"connections": map[string]any{}}
+	for name, m := range raw {
+		envMap["connections"].(map[string]any)[name] = m
+	}
+	conns, _ := connection.ReadConnections(envMap) // invalid entries warn+skip inside
+
+	names := make([]string, 0, len(raw))
+	for name := range raw {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := []parsedImport{}
+	for _, name := range names {
+		e := ImportEntry{Name: normConnName(name)}
+		conn, ok := conns[name]
+		switch {
+		case !ok:
+			e.Error = "could not load connection (check its type and required fields)"
+		case conn.Type.IsUnknown() || !knownConnType(conn.Type.String()):
+			e.Error = "unknown connection type"
+		}
+
+		p := parsedImport{entry: e}
+		if e.Error == "" {
+			description, tags := connMeta(conn.Data)
+			e.Type = conn.Type.String()
+			in, secrets, masked := importInput(name, e.Type, conn.Data, description, tags)
+			e.SecretFields = secrets
+			e.MaskedSecret = masked
+			e.Valid = true
+			p.entry, p.input = e, in
+		}
+		if _, err := cs.Get(e.Name); err == nil {
+			p.entry.Exists = true
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// PreviewImportContent parses uploaded content and reports what would be
+// imported, without writing anything.
+func (cs *ConnService) PreviewImportContent(content string) ([]ImportEntry, error) {
+	parsed, err := cs.parseImport(content)
+	if err != nil {
+		return nil, err
+	}
+	entries := []ImportEntry{}
+	for _, p := range parsed {
+		entries = append(entries, p.entry)
+	}
+	return entries, nil
+}
+
+// ImportContent imports the selected connections from uploaded content.
+// Existing names are skipped unless onConflict is "overwrite".
+func (cs *ConnService) ImportContent(content string, names []string, onConflict string) (imported, skipped []string, err error) {
+	imported, skipped = []string{}, []string{}
+	parsed, err := cs.parseImport(content)
+	if err != nil {
+		return imported, skipped, err
+	}
+	selected := map[string]bool{}
+	for _, n := range names {
+		selected[normConnName(n)] = true
+	}
+
+	for _, p := range parsed {
+		if !p.entry.Valid || (len(selected) > 0 && !selected[p.entry.Name]) {
+			continue
+		}
+		if p.entry.Exists && onConflict != "overwrite" {
+			skipped = append(skipped, p.entry.Name)
+			continue
+		}
+		if _, err = cs.Upsert(p.input); err != nil {
+			return imported, skipped, err
+		}
+		imported = append(imported, p.entry.Name)
+	}
+	if len(imported) > 0 {
+		cs.db.Audit("import", "connection", "", strings.Join(imported, ","))
+	}
+	return imported, skipped, nil
+}
+
+// scanEnv discovers the server machine's sling connections (env.yaml, env
+// vars, dbt profiles) without our own materialized ones shadowing the real
+// sources. ENV_YAML is restored by Materialize on return.
+func (cs *ConnService) scanEnv() connection.ConnEntries {
 	os.Unsetenv("ENV_YAML")
-	entries := connection.GetLocalConns(true)
 	defer cs.Materialize()
+	return connection.GetLocalConns(true)
+}
 
-	for _, entry := range entries {
+// PreviewImportEnv scans the machine's sling environment for importable
+// connections. Already-managed names are included with Exists=true so the
+// UI can explain why they cannot be imported.
+func (cs *ConnService) PreviewImportEnv() ([]ImportEntry, error) {
+	out := []ImportEntry{}
+	for _, entry := range cs.scanEnv() {
 		if entry.Name == "LOCAL" || strings.Contains(entry.Source, "env-var env yaml") {
 			continue // built-in or our own materialized conns
 		}
-		if _, err := cs.Get(entry.Name); err == nil {
-			continue // already managed
+		e := ImportEntry{
+			Name:   normConnName(entry.Name),
+			Type:   entry.Connection.Type.String(),
+			Source: entry.Source,
+			Valid:  true,
 		}
-
-		props := map[string]any{}
-		for k, v := range entry.Connection.Data {
-			if k == "type" || k == "url" {
-				continue
-			}
-			if isSecretField(entry.Connection.Type.String(), k) {
-				if sv := cast.ToString(v); sv != "" {
-					if e := cs.vault.SaveSecret(secretPath(entry.Name, k), sv); e != nil {
-						return imported, e
-					}
-				}
-				continue
-			}
-			props[k] = v
+		_, secrets, masked := importInput(entry.Name, e.Type, entry.Connection.Data, entry.Description, nil)
+		e.SecretFields = secrets
+		e.MaskedSecret = masked
+		if _, err := cs.Get(e.Name); err == nil {
+			e.Exists = true
 		}
-
-		propsB, _ := json.Marshal(props)
-		rec := &ConnectionRecord{
-			Name:      entry.Name,
-			Type:      entry.Connection.Type.String(),
-			PropsJSON: string(propsB),
-		}
-		if !dryRun {
-			if e := cs.db.Create(rec).Error; e != nil {
-				return imported, e
-			}
-		}
-		imported = append(imported, entry.Name)
+		out = append(out, e)
 	}
-	if !dryRun {
-		cs.Materialize()
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// ImportEnv imports connections discovered in the machine's sling
+// environment (names empty = all new ones). Existing names are skipped
+// unless onConflict is "overwrite".
+func (cs *ConnService) ImportEnv(names []string, onConflict string) (imported, skipped []string, err error) {
+	imported, skipped = []string{}, []string{}
+	selected := map[string]bool{}
+	for _, n := range names {
+		selected[normConnName(n)] = true
+	}
+
+	for _, entry := range cs.scanEnv() {
+		name := normConnName(entry.Name)
+		if entry.Name == "LOCAL" || strings.Contains(entry.Source, "env-var env yaml") {
+			continue // built-in or our own materialized conns
+		}
+		if len(selected) > 0 && !selected[name] {
+			continue
+		}
+		if _, err := cs.Get(name); err == nil && onConflict != "overwrite" {
+			skipped = append(skipped, name)
+			continue
+		}
+		in, _, _ := importInput(entry.Name, entry.Connection.Type.String(), entry.Connection.Data, entry.Description, nil)
+		if _, err = cs.Upsert(in); err != nil {
+			return imported, skipped, err
+		}
+		imported = append(imported, name)
+	}
+	if len(imported) > 0 {
 		cs.db.Audit("import", "connection", "", strings.Join(imported, ","))
 	}
-	return imported, nil
+	return imported, skipped, nil
+}
+
+/* --------------------------------- export ---------------------------------- */
+
+// ExportConns renders every managed connection as a sling-compatible
+// connections document (YAML or JSON). Secret values are always masked with
+// ****** — plaintext credentials never leave the vault.
+func (cs *ConnService) ExportConns(format string) (filename, body string, count int, err error) {
+	recs, err := cs.List()
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	conns := map[string]any{}
+	for i := range recs {
+		rec := &recs[i]
+		entry := map[string]any{"type": rec.Type}
+		for k, v := range rec.Props() {
+			if v == nil || cast.ToString(v) == "" {
+				continue
+			}
+			if isSecretField(rec.Type, k) || contains(rec.SecretFieldList(), k) {
+				entry[k] = secretMask
+			} else {
+				entry[k] = v
+			}
+		}
+		// make masked secret fields visible even when absent from props
+		for _, f := range rec.SecretFieldList() {
+			if _, ok := entry[f]; !ok {
+				entry[f] = secretMask
+			}
+		}
+		if rec.Description != "" {
+			entry["description"] = rec.Description
+		}
+		if tags := rec.Tags(); len(tags) > 0 {
+			entry["tags"] = tags
+		}
+		conns[rec.Name] = entry
+	}
+
+	switch format {
+	case "json":
+		b, e := json.MarshalIndent(map[string]any{"connections": conns}, "", "  ")
+		if e != nil {
+			return "", "", 0, g.Error(e, "could not render export")
+		}
+		body, filename = string(b)+"\n", "connections.json"
+	default: // yaml
+		b, e := yaml.Marshal(map[string]any{"connections": conns})
+		if e != nil {
+			return "", "", 0, g.Error(e, "could not render export")
+		}
+		header := fmt.Sprintf(
+			"# sling workbench connections export (%s)\n# Secret values are masked with %s and NOT included —\n# re-enter credentials after importing on another machine.\n",
+			time.Now().Format(time.RFC3339), secretMask,
+		)
+		body, filename = header+string(b), "connections.yaml"
+	}
+	cs.db.Audit("export", "connection", "", g.F("%d connections, format=%s, secrets masked", len(recs), format))
+	return filename, body, len(recs), nil
 }
 
 /* -------------------------------- helpers -------------------------------- */
