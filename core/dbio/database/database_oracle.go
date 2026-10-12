@@ -137,7 +137,16 @@ func (conn *OracleConn) ConnString() string {
 	// FREEPDB1. The `sid` prop is often auto-populated from the URL path
 	// (see connection.setURL), so dropping it here is the safe choice when
 	// the caller asked for service-name semantics.
+	//
+	// The URL path form (`oracle://host:port/MYSERVICE`, the documented sling
+	// syntax) also lands in `sid`. Modern Oracle (19c+, all-PDB) almost
+	// always means a service there, so treat it as a service name too. Set
+	// the `USE_SID` prop to force legacy SID semantics for the path value.
 	serviceName := conn.GetProp("service_name")
+	useSID := cast.ToBool(conn.GetProp("USE_SID"))
+	if serviceName == "" && !useSID {
+		serviceName = conn.GetProp("sid")
+	}
 	for key, new_key := range propMapping {
 		if key == "sid" && serviceName != "" {
 			continue
@@ -150,7 +159,7 @@ func (conn *OracleConn) ConnString() string {
 	connStr := go_ora.BuildUrl(
 		conn.GetProp("host"),
 		cast.ToInt(conn.GetProp("port")),
-		conn.GetProp("service_name"),
+		serviceName,
 		conn.GetProp("username"),
 		conn.GetProp("password"),
 		options,
