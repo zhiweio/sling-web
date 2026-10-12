@@ -1,0 +1,30 @@
+# sling-server systemd 服务单元
+# 安装:
+#   sudo cp deploy/sling-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sling-server
+# 浏览器访问 http://<主机IP>:5666 （如需远程访问请配置 --token 与防火墙）
+
+[Unit]
+Description=sling-server Data Migration Workbench
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 按需修改运行用户与监听地址；远程访问务必开启 --token
+ExecStart=/usr/local/bin/sling-server --port 5666 --no-open
+Restart=on-failure
+RestartSec=5
+# 数据目录（连接加密库/任务/历史）
+Environment=SLING_HOME_DIR=/var/lib/sling
+StateDirectory=sling
+User=sling
+Group=sling
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sling
+
+[Install]
+WantedBy=multi-user.target

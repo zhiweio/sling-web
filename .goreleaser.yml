@@ -1,0 +1,75 @@
+# sling-server 发布配置（goreleaser）
+# 前端先构建（before.hooks），再编译各平台单一二进制（go:embed 内嵌 UI）。
+# SQLite 为 CGO 依赖 → 在 GitHub Actions 原生 OS 矩阵上构建（与 CLI 现有 CI 一致）。
+# 本地快照: goreleaser --snapshot --clean
+version: 2
+
+project_name: sling-server
+
+before:
+  hooks:
+    - cmd: npm ci
+      dir: web
+    - cmd: npm run build
+      dir: web
+
+builds:
+  - id: sling-server
+    main: ./cmd/sling-server
+    binary: sling-server
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # windows/arm64 本机无 CGO 交叉工具链，按需开启
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X github.com/slingdata-io/sling-cli/core.Version={{.Version}}
+
+archives:
+  - id: sling-server
+    ids: [sling-server]
+    name_template: "sling-server_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev"
+
+# 可选分发渠道（发布时按需启用）
+# brews:
+#   - repository:
+#       owner: your-org
+#       name: homebrew-tap
+#     name: sling-server
+# nfpms:
+#   - package_name: sling-server
+#     formats: [deb, rpm]
+#     maintainer: sling-server
+#     description: Data migration workbench (sling engine + web UI)
+# docker:
+#   - image_templates: ["ghcr.io/your-org/sling-server:{{ .Version }}"]

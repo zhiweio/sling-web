@@ -1,0 +1,4 @@
+minimumReleaseAgeExclude:
+  - '@tanstack/react-virtual@3.14.14'
+  - '@tanstack/virtual-core@3.18.0'
+  - lucide-react@1.54.0

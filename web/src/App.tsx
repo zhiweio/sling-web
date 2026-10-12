@@ -1,0 +1,96 @@
+import { lazy, Suspense, useEffect } from "react"
+import { Navigate, Route, Routes, useLocation } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
+import { AppShell } from "@/components/layout/app-shell"
+import { useSSE } from "@/lib/sse"
+import type { RunSnapshot } from "@/lib/types"
+import { Toaster } from "@/components/ui/sonner"
+
+const Dashboard = lazy(() => import("@/features/dashboard"))
+const Connections = lazy(() => import("@/features/connections"))
+const Jobs = lazy(() => import("@/features/jobs"))
+const JobEditor = lazy(() => import("@/features/jobs/editor"))
+const Runs = lazy(() => import("@/features/runs"))
+const RunDetail = lazy(() => import("@/features/runs/detail"))
+const Notifications = lazy(() => import("@/features/notifications"))
+const Audit = lazy(() => import("@/features/audit"))
+const Settings = lazy(() => import("@/features/settings"))
+
+function Loading() {
+  return (
+    <div className="flex h-[50vh] items-center justify-center text-muted-foreground">
+      <div className="size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  )
+}
+
+/** 全局 SSE：运行事件实时刷新缓存 */
+function SseBridge() {
+  const qc = useQueryClient()
+  const location = useLocation()
+
+  useSSE({
+    onExecution: (snap: RunSnapshot) => {
+      qc.setQueriesData<{ runs: (RunSnapshot & { id?: string })[] }>({ queryKey: ["runs"] }, (old) =>
+        old
+          ? {
+              ...old,
+              runs: old.runs.some((r) => r.run_id === snap.run_id)
+                ? old.runs.map((r) => (r.run_id === snap.run_id ? snap : r))
+                : [snap, ...old.runs].slice(0, 200),
+            }
+          : old,
+      )
+      // 运行中的详情页本地状态
+      qc.setQueryData(["run", snap.run_id], snap)
+      if (snap.status === "running") {
+        document.title = `${snap.job_name ?? "任务"} · 运行中 · sling`
+      } else {
+        document.title = "sling 数据迁移工作台"
+        qc.invalidateQueries({ queryKey: ["runs"] })
+        qc.invalidateQueries({ queryKey: ["jobs"] })
+        qc.invalidateQueries({ queryKey: ["stats"] })
+      }
+    },
+    onNotification: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+    onJob: () => {
+      qc.invalidateQueries({ queryKey: ["jobs"] })
+      qc.invalidateQueries({ queryKey: ["stats"] })
+    },
+  })
+
+  useEffect(() => {
+    // 页面切换时恢复标题（详情页可能设置自定义标题）
+    return () => {
+      document.title = "sling 数据迁移工作台"
+    }
+  }, [location.pathname])
+
+  return null
+}
+
+export default function App() {
+  return (
+    <AppShell>
+      <SseBridge />
+      <Suspense fallback={<Loading />}>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/connections" element={<Connections />} />
+          <Route path="/connections/:name" element={<Connections />} />
+          <Route path="/jobs" element={<Jobs />} />
+          <Route path="/jobs/new" element={<JobEditor />} />
+          <Route path="/jobs/:id/edit" element={<JobEditor />} />
+          <Route path="/jobs/:id" element={<JobEditor />} />
+          <Route path="/runs" element={<Runs />} />
+          <Route path="/runs/:id" element={<RunDetail />} />
+          <Route path="/notifications" element={<Notifications />} />
+          <Route path="/audit" element={<Audit />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+      <Toaster position="top-center" richColors />
+    </AppShell>
+  )
+}

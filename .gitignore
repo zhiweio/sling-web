@@ -57,3 +57,13 @@ tests/evals/results/*.summary.json
 tests/evals/eval.duckdb
 
 cmd/sling/sling
+
+# Local tooling / workspace state
+.codegraph/
+.zcode/
+node_modules/
+
+# Playwright e2e artifacts
+e2e/.artifacts/
+e2e/test-results/
+e2e/playwright-report/

@@ -221,3 +221,52 @@ clean:
     cd core/dbio && rm -f .test 2>/dev/null || true && cd -
     echo "✓ Clean complete"
 
+
+
+# ---- sling-server 工作台 (Browser/Server) ----
+
+# 安装前端依赖 (web/)
+web-install:
+    cd web && corepack enable && pnpm install
+
+# 构建前端 (web/dist)
+web-build:
+    cd web && pnpm run build
+
+# 前端类型检查
+web-check: web-install
+    cd web && npx tsc -b
+
+# 开发模式: 需两个终端
+#   1) just web-dev      (Vite :5173, /api 代理到 :5666)
+#   2) just dev          (Go server, 反代到 Vite)
+web-dev:
+    cd web && pnpm run dev
+
+# Go server 开发模式 (dev build-tag: UI 反代到 Vite :5173)
+dev:
+    #!/usr/bin/env bash
+    set -e
+    go run -tags dev ./cmd/sling-server --no-open --port 5666
+
+# 构建单一二进制 (含内嵌前端)
+build-server: web-build
+    #!/usr/bin/env bash
+    set -e
+    echo "Building sling-server (embedded UI)..."
+    go build -p 1 -ldflags="-s -w" -o cmd/sling-server/sling-server ./cmd/sling-server
+    ./cmd/sling-server/sling-server version
+
+# sling-server 单元测试
+test-server:
+    (cd server && go test -count=1 -timeout 300s)
+
+# 发布快照 (goreleaser, 需本地有 goreleaser)
+release-snapshot:
+    goreleaser --snapshot --clean
+
+# E2E 测试 (Playwright, 需先 build-server)
+test-e2e:
+    #!/usr/bin/env bash
+    set -e
+    cd e2e && npm ci && npx playwright install chromium && npx playwright test
