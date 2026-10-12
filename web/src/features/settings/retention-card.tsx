@@ -1,4 +1,4 @@
-// 设置·保留策略:运行记录/通知/审计保留天数(0 = 永久保留)
+// Settings · retention: retention days for runs/notifications/audit (0 = keep forever)
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"

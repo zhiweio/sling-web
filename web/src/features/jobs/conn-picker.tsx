@@ -1,5 +1,5 @@
-// 连接选择器（向导步骤 1/2）：搜索 + 类型筛选 + 排序 + 分页
-// 兼容几十个连接的场景：工具栏常驻，行式列表替代卡片墙，健康圆点标注测试状态。
+// Connection picker (wizard steps 1/2): search + type filter + sort + pagination.
+// Scales to dozens of connections: persistent toolbar, row list instead of a card wall, health dots for test status.
 import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Check, Search, XCircle } from "lucide-react"
@@ -30,7 +30,7 @@ export function ConnPicker({
   const [sort, setSort] = useState<SortKey>("name")
   const [page, setPage] = useState(0)
 
-  // 筛选/排序变化时回到第一页
+  // back to the first page when filters/sort change
   useEffect(() => setPage(0), [q, typeFilter, sort])
 
   const types = useMemo(() => {
@@ -70,7 +70,7 @@ export function ConnPicker({
 
   return (
     <div className="space-y-2.5">
-      {/* 工具栏：搜索 + 类型筛选 + 排序 */}
+      {/* Toolbar: search + type filter + sort */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-44 flex-1">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -116,7 +116,7 @@ export function ConnPicker({
         </Select>
       </div>
 
-      {/* 行式列表 */}
+      {/* Row list */}
       <div className="overflow-hidden rounded-xl border">
         {pageItems.map((c) => {
           const selected = value === c.name
@@ -187,7 +187,7 @@ export function ConnPicker({
         )}
       </div>
 
-      {/* 分页脚注：总数 + 页码 */}
+      {/* Pagination footer: total count + page number */}
       <ListPagination
         total={filtered.length}
         page={page}

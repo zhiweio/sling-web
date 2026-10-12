@@ -1,4 +1,4 @@
-// 总览页：统计卡 + 趋势 + 即将运行 + 最近执行 + 连接健康
+// Overview page: stat cards + trend + upcoming runs + recent runs + connection health
 import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
@@ -55,7 +55,7 @@ export default function Dashboard() {
         />
       )}
 
-      {/* 统计卡 */}
+      {/* Stat cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard icon={Activity} label={t("dashboard.statRuns")} value={formatNumber(totalRuns)} />
         <StatCard icon={CheckCircle2} label={t("dashboard.statSuccess")} value={`${successRate}%`} tone={successRate >= 90 ? "ok" : successRate >= 60 ? "warn" : "bad"} />
@@ -64,7 +64,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* 14 天趋势迷你柱状图（纯 CSS，无重依赖） */}
+        {/* 14-day trend mini bar chart (pure CSS, no heavy deps) */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.statRuns")} · 14d</CardTitle>
@@ -80,7 +80,7 @@ export default function Dashboard() {
                 const h = Math.max((d.runs / maxRuns) * 100, 4)
                 const bad = d.failed > 0
                 return (
-                  <div key={d.day} className="group relative flex-1" title={`${d.day} · ${d.runs} 次 · 成功 ${d.success}`}>
+                  <div key={d.day} className="group relative flex-1" title={t("dashboard.trendTip", { day: d.day, runs: d.runs, success: d.success })}>
                     <div
                       className={`w-full rounded-sm transition-all group-hover:opacity-80 ${bad ? "bg-amber-500/70" : "bg-primary/70"}`}
                       style={{ height: `${h}%` }}
@@ -92,7 +92,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* 即将运行 */}
+        {/* Upcoming runs */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -118,7 +118,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* 最近执行 */}
+        {/* Recent runs */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{t("dashboard.recentRuns")}</CardTitle>
@@ -147,7 +147,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* 连接健康 */}
+        {/* Connection health */}
         <Card>
           <CardHeader className="flex-row items-center justify-between pb-2">
             <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">

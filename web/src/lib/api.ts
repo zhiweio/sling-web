@@ -1,4 +1,4 @@
-// src/lib/api.ts — 类型化 API client
+// src/lib/api.ts — typed API client
 import type {
   Analysis,
   AuditEntry,

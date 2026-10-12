@@ -1,4 +1,6 @@
-// src/lib/format.ts — 人性化格式化工具
+// src/lib/format.ts — human-friendly formatting helpers
+import i18n from "@/i18n"
+
 export function formatBytes(bytes?: number): string {
   if (!bytes || bytes === 0) return "0 B"
   const units = ["B", "KB", "MB", "GB", "TB"]
@@ -34,14 +36,14 @@ export function relativeTime(iso?: string | null): string {
   const d = new Date(iso)
   const diff = Date.now() - d.getTime()
   const sec = Math.round(diff / 1000)
-  if (sec < 5) return "刚刚"
-  if (sec < 60) return `${sec} 秒前`
+  if (sec < 5) return i18n.t("common.relTime.now")
+  if (sec < 60) return i18n.t("common.relTime.secondsAgo", { n: sec })
   const min = Math.round(sec / 60)
-  if (min < 60) return `${min} 分钟前`
+  if (min < 60) return i18n.t("common.relTime.minutesAgo", { n: min })
   const hr = Math.round(min / 60)
-  if (hr < 24) return `${hr} 小时前`
+  if (hr < 24) return i18n.t("common.relTime.hoursAgo", { n: hr })
   const day = Math.round(hr / 24)
-  if (day < 30) return `${day} 天前`
+  if (day < 30) return i18n.t("common.relTime.daysAgo", { n: day })
   return d.toLocaleDateString()
 }
 
@@ -54,38 +56,36 @@ export function formatTime(iso?: string | null): string {
 export function countdown(iso?: string | null): string {
   if (!iso) return "-"
   const diff = new Date(iso).getTime() - Date.now()
-  if (diff <= 0) return "即将运行"
+  if (diff <= 0) return i18n.t("common.countdown.soon")
   const min = Math.floor(diff / 60000)
-  if (min < 1) return `${Math.round(diff / 1000)} 秒后`
-  if (min < 60) return `${min} 分钟后`
+  if (min < 1) return i18n.t("common.countdown.seconds", { n: Math.round(diff / 1000) })
+  if (min < 60) return i18n.t("common.countdown.minutes", { n: min })
   const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr} 小时 ${min % 60} 分后`
-  return `${Math.floor(hr / 24)} 天后`
+  if (hr < 24) return i18n.t("common.countdown.hoursMinutes", { h: hr, m: min % 60 })
+  return i18n.t("common.countdown.days", { n: Math.floor(hr / 24) })
 }
 
-/** cron 表达式 → 人类可读中文（覆盖常用预设） */
+/** cron expression → human-readable text (covers common presets) */
 export function cronToHuman(cron?: string): string {
-  if (!cron) return "手动"
+  if (!cron) return i18n.t("common.cron.manual")
   const parts = cron.trim().split(/\s+/)
   if (parts.length !== 5) return cron
   const [min, hour, dom, _mon, dow] = parts
 
   if (min.startsWith("*/")) {
-    const n = min.slice(2)
-    return `每 ${n} 分钟`
+    return i18n.t("common.cron.everyNMinutes", { n: min.slice(2) })
   }
   if (hour.startsWith("*/")) {
-    const n = hour.slice(2)
-    return `每 ${n} 小时`
+    return i18n.t("common.cron.everyNHours", { n: hour.slice(2) })
   }
-  if (hour === "*" && (min === "0" || min === "*")) return "每分钟"
+  if (hour === "*" && (min === "0" || min === "*")) return i18n.t("common.cron.everyMinute")
   if (dom === "*" && dow === "*" && hour !== "*") {
-    return `每天 ${hour.padStart(2, "0")}:${min.padStart(2, "0")}`
+    return i18n.t("common.cron.daily", { time: `${hour.padStart(2, "0")}:${min.padStart(2, "0")}` })
   }
   if (dow !== "*" && dom === "*") {
-    const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-    const dayName = days[Number(dow)] ?? dow
-    return `${dayName} ${hour.padStart(2, "0")}:${min.padStart(2, "0")}`
+    const dayKey = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][Number(dow)]
+    const dayName = dayKey ? i18n.t(`common.cron.${dayKey}`) : dow
+    return i18n.t("common.cron.weekdayAt", { day: dayName, time: `${hour.padStart(2, "0")}:${min.padStart(2, "0")}` })
   }
   return cron
 }

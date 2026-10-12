@@ -1,7 +1,7 @@
-// Job 编辑器：5 步向导（选源 → 目标 → 同步方式 → 高级 → 调度保存）
-// 大白话模式卡片 + 主键/更新键自动推导 + YAML 预览 + 破坏性操作守卫
-// 视觉规范：卡片 rounded-xl / 内嵌芯片 rounded-lg / 徽标 rounded-full；
-// 交互反馈统一 200ms + active:scale；步骤切换 300ms 淡入上移（尊重系统减弱动效）。
+// Job editor: 5-step wizard (source → target → sync mode → advanced → schedule & save)
+// Plain-language mode cards + primary/incremental key inference + YAML preview + destructive-action guard
+// Visual rules: cards rounded-xl / inline chips rounded-lg / badges rounded-full;
+// Interaction feedback: 200ms + active:scale; step transitions: 300ms fade + slide up (respects reduced motion).
 import { Fragment, useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -130,7 +130,7 @@ export default function JobEditor() {
     enabled: editing,
   })
 
-  // 载入编辑
+  // load job for editing
   useEffect(() => {
     if (job) {
       setName(job.name)
@@ -156,7 +156,7 @@ export default function JobEditor() {
   const connsAll = conns ?? []
   const sourceIsDb = isDbConn(spec.source_conn, conns)
 
-  /* ---------- 派生 ---------- */
+  /* ---------- Derived ---------- */
   const canNext = [
     () => spec.source_conn && spec.streams.length > 0,
     () => spec.target_conn && mappingIssues(spec).length === 0,
@@ -167,7 +167,7 @@ export default function JobEditor() {
   function validMode() {
     const mode = spec.defaults.mode
     if (mode === "upsert") {
-      // defaults 主键兜底；批量场景允许逐表主键（全部流都有键即可）
+      // defaults primary key as fallback; in batch mode per-stream keys are allowed (every stream must have one)
       if ((spec.defaults.primary_key ?? []).length) return true
       return streamsOf(spec).every((s) => (s.primary_key ?? []).length > 0)
     }
@@ -216,7 +216,7 @@ export default function JobEditor() {
 
   return (
     <div className="mx-auto max-w-3xl pb-10">
-      {/* 页头：返回 + 标题 + 步骤进度 + 上下文工具 */}
+      {/* Header: back + title + step progress + context tools */}
       <header className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Button variant="ghost" size="icon" onClick={() => nav("/jobs")} aria-label="back">
@@ -244,14 +244,14 @@ export default function JobEditor() {
         </div>
       </header>
 
-      {/* 步骤条：编号节点 + 连接线，已完成步骤可点击回跳 */}
+      {/* Stepper: numbered nodes + connectors; completed steps are clickable to jump back */}
       <Stepper step={step} onJump={setStep} />
 
       {isLoading && editing ? (
         <Skeleton className="mt-8 h-96" />
       ) : (
         <>
-          {/* 步骤内容：切换时淡入上移 */}
+          {/* Step content: fade + slide up on change */}
           <div key={step} className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-300 motion-reduce:animate-none">
             {step === 1 && (
               <StepSource spec={spec} setSpec={setSpec} conns={connsAll} sourceIsDb={sourceIsDb} />
@@ -270,7 +270,7 @@ export default function JobEditor() {
             )}
           </div>
 
-          {/* 底部导航：上一步 | 缺失提示 + 下一步/保存 */}
+          {/* Footer nav: back | blocking hint + next/save */}
           <footer className="mt-4 flex items-center justify-between gap-3 border-t pt-4">
             <Button
               variant="ghost"
@@ -344,7 +344,7 @@ export default function JobEditor() {
   )
 }
 
-/* ------------------------------- 向导外壳组件 ------------------------------ */
+/* ------------------------------ Wizard shell ------------------------------- */
 
 function Stepper({ step, onJump }: { step: number; onJump: (n: number) => void }) {
   const { t } = useTranslation()
@@ -408,7 +408,7 @@ function StepIntro({ n }: { n: number }) {
   )
 }
 
-/** 表单分组：标题 + 可选说明 + 内容，统一向导内部分节节奏 */
+/** Form group: title + optional description + content; unified section rhythm inside the wizard */
 function FieldGroup({
   label,
   desc,
@@ -431,7 +431,7 @@ function FieldGroup({
 
 
 
-/* ------------------------------- Step 1: 源 ------------------------------ */
+/* ------------------------------- Step 1: Source ---------------------------- */
 
 function StepSource({
   spec,
@@ -455,7 +455,7 @@ function StepSource({
     staleTime: 60_000,
   })
 
-  // schema 分组树（DB 源）与扁平文件列表共用一份发现数据
+  // schema-grouped tree (DB sources) and the flat file list share one discovery query
   const grouped = useMemo<PickerSchema[]>(() => {
     const out: PickerSchema[] = []
     for (const schema of discover?.schemas ?? []) {
@@ -493,7 +493,7 @@ function StepSource({
       if (selected) set.add(f)
       else set.delete(f)
     }
-    // 保持树的展示顺序
+    // keep the tree's display order
     const order = new Map(allTables.map((tb, i) => [tb.full, i]))
     const streams = [...set]
       .sort((a, b) => (order.get(a) ?? 1e9) - (order.get(b) ?? 1e9))
@@ -622,7 +622,7 @@ function StepSource({
   )
 }
 
-/* ------------------------------- Step 2: 目标 ----------------------------- */
+/* ------------------------------- Step 2: Target ---------------------------- */
 
 function StepTarget({ spec, setSpec, conns }: { spec: JobSpec; setSpec: (s: JobSpec) => void; conns: Connection[] }) {
   const { t } = useTranslation()
@@ -650,7 +650,7 @@ function StepTarget({ spec, setSpec, conns }: { spec: JobSpec; setSpec: (s: JobS
   )
 }
 
-/* ---------------------------- Step 3: 同步方式 ---------------------------- */
+/* ------------------------------ Step 3: Sync mode --------------------------- */
 
 function StepMode({
   spec,
@@ -668,7 +668,8 @@ function StepMode({
   const multi = streams.length > 1
   const needsKeys = mode === "upsert" || mode === "append"
 
-  // 全库列级发现（一次查询）：defaults 推导用第一张表，批量时供逐表更新键启发式
+  // whole-database column discovery (one query): first table drives defaults,
+  // the map feeds per-stream update-key heuristics in batch mode
   const { data: colsByTable } = useQuery({
     queryKey: ["wizard-cols", spec.source_conn],
     queryFn: () => api.discover(spec.source_conn, "column"),
@@ -700,7 +701,7 @@ function StepMode({
     [columns],
   )
 
-  // defaults 自动填充建议（单表与既有行为一致）
+  // auto-fill defaults with suggestions (single-table keeps existing behavior)
   useEffect(() => {
     if (mode === "upsert" && !(spec.defaults.primary_key ?? []).length && suggestedPk) {
       setSpec({ ...spec, defaults: { ...spec.defaults, primary_key: [suggestedPk] } })
@@ -710,7 +711,7 @@ function StepMode({
     }
   }, [mode, suggestedPk, suggestedUk])
 
-  /* ---------- 批量：逐表主键（源库真实主键元数据） ---------- */
+  /* ---------- Batch: per-stream keys (real source PK metadata) ---------- */
   const concreteTables = useMemo(
     () => streams.map((s) => s.source_object ?? "").filter((o) => o && !hasWildcard(o) && !isQuerySrc(o)),
     [streams],
@@ -723,7 +724,7 @@ function StepMode({
     staleTime: 120_000,
   })
 
-  // 自动填充：仅在流缺少主键时写入源库真实主键，绝不覆盖用户输入
+  // auto-fill: only writes the source's real primary key when a stream lacks one; never overrides user input
   useEffect(() => {
     if (!pks?.keys || mode !== "upsert") return
     let changed = false
@@ -735,7 +736,7 @@ function StepMode({
         changed = true
         return { ...s, primary_key: found }
       }
-      // 无元数据时退回列名启发式
+      // fall back to column-name heuristics when no metadata is available
       const cols = colsByTable?.get(src.toLowerCase()) ?? []
       const guess = cols.find((c) => /(^|_)(id|uuid|key)$/i.test(c.name))?.name
       if (guess) {
@@ -812,7 +813,7 @@ function StepMode({
             </div>
           </FieldGroup>
 
-          {/* defaults 级键（全部流的兜底） */}
+          {/* defaults-level keys (fallback for all streams) */}
           {needsKeys && sourceIsDb && (
             <div className="grid gap-5 sm:grid-cols-2">
               {mode === "upsert" && (
@@ -871,7 +872,7 @@ function StepMode({
             </div>
           )}
 
-          {/* 批量逐表键：源库真实主键预填 + 逐行覆盖（Airbyte 式 per-stream keys） */}
+          {/* Batch per-stream keys: pre-filled from real source PKs + per-row override (Airbyte-style per-stream keys) */}
           {needsKeys && sourceIsDb && multi && (
             <FieldGroup
               label={t("jobs.keys.perTableTitle")}
@@ -984,7 +985,7 @@ function ColumnPicker({
   }
   return (
     <div className="mt-1.5 overflow-hidden rounded-lg border">
-      {/* 联合主键：已选字段 chips（按勾选顺序，可移除） */}
+      {/* Composite key: selected column chips (in click order, removable) */}
       {multi && value.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 border-b bg-muted/30 px-2.5 py-2">
           {value.map((name, i) => (
@@ -1028,7 +1029,7 @@ function ColumnPicker({
   )
 }
 
-/* ----------------------------- Step 4: 高级 ------------------------------- */
+/* ----------------------------- Step 4: Advanced ----------------------------- */
 
 const ADV_GROUPS: {
   icon: typeof TableProperties
@@ -1113,15 +1114,15 @@ function StepAdvanced({
   )
 }
 
-/* --------------------------- Step 5: 调度与保存 ---------------------------- */
+/* -------------------------- Step 5: Schedule & save ------------------------- */
 
-const PRESETS: { key: string; label: string; cron: string }[] = [
-  { key: "5min", label: "每 5 分钟", cron: "*/5 * * * *" },
-  { key: "hourly", label: "每小时", cron: "0 * * * *" },
-  { key: "daily6", label: "每天 06:00", cron: "0 6 * * *" },
-  { key: "daily9", label: "每天 09:00", cron: "0 9 * * *" },
-  { key: "daily2am", label: "每天 02:00", cron: "0 2 * * *" },
-  { key: "weeklyMon", label: "每周一 09:00", cron: "0 9 * * 1" },
+const PRESETS: { key: string; labelKey: string; cron: string }[] = [
+  { key: "5min", labelKey: "jobs.cronPresets.5min", cron: "*/5 * * * *" },
+  { key: "hourly", labelKey: "jobs.cronPresets.hourly", cron: "0 * * * *" },
+  { key: "daily6", labelKey: "jobs.cronPresets.daily6", cron: "0 6 * * *" },
+  { key: "daily9", labelKey: "jobs.cronPresets.daily9", cron: "0 9 * * *" },
+  { key: "daily2am", labelKey: "jobs.cronPresets.daily2am", cron: "0 2 * * *" },
+  { key: "weeklyMon", labelKey: "jobs.cronPresets.weeklyMon", cron: "0 9 * * 1" },
 ]
 
 function StepFinal({
@@ -1222,7 +1223,7 @@ function StepFinal({
                         : "text-muted-foreground hover:border-primary/50 hover:text-foreground",
                     )}
                   >
-                    {p.label}
+                    {t(p.labelKey)}
                   </button>
                 ))}
               </div>
@@ -1254,7 +1255,7 @@ function StepFinal({
   )
 }
 
-/* ------------------------------- YAML 预览 -------------------------------- */
+/* ------------------------------- YAML preview ------------------------------- */
 
 function YamlPreview({ spec, onClose }: { spec: JobSpec; onClose: () => void }) {
   const { t } = useTranslation()
@@ -1275,14 +1276,14 @@ function YamlPreview({ spec, onClose }: { spec: JobSpec; onClose: () => void }) 
             toast.success(t("common.copied"))
           }}
         >
-          复制
+          {t("common.copy")}
         </Button>
       </DialogContent>
     </Dialog>
   )
 }
 
-/** 本地 YAML 渲染（与后端 ToYAML 导出格式一致的轻量实现，用于向导实时预览） */
+/** Local YAML rendering (lightweight implementation matching the backend ToYAML export format, for live wizard preview) */
 function specToYamlLocal(spec: JobSpec): string {
   const modeMap: Record<string, string> = { replace: "full-refresh", truncate: "truncate", append: "incremental", upsert: "incremental", snapshot: "snapshot" }
   const lines: string[] = []
@@ -1297,7 +1298,8 @@ function specToYamlLocal(spec: JobSpec): string {
   for (const s of streamsOf(spec)) {
     const key = s.name || s.source_object
     lines.push(`  ${key}:`)
-    // 与后端一致：同名默认也写显式 object（CLI 复制流必须显式指定 object）
+    // matches backend: write an explicit object even when identical to the key
+    // (CLI copy streams require an explicit object)
     const obj = effectiveTarget(s.source_object ?? "", s.target_object)
     if (obj) lines.push(`    object: ${obj}`)
     if (s.update_key) lines.push(`    update_key: ${s.update_key}`)
@@ -1316,7 +1318,7 @@ function streamsOf(spec: JobSpec): StreamSpec[] {
   return (spec.streams ?? []).filter((s) => !s.disabled)
 }
 
-/** 破坏性确认的目标表清单：批量场景截断为前 5 张 + 剩余计数，避免弹窗刷屏 */
+/** Target table list for the destructive-run confirmation: truncated to the first 5 + remaining count in batch mode to keep the dialog short */
 function confirmTablesText(spec: JobSpec, t: (k: string, v?: Record<string, unknown>) => string): string {
   const tables = streamsOf(spec).map((s) => s.target_object || s.source_object || "")
   if (tables.length <= 5) return tables.join(", ")

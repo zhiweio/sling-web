@@ -1,7 +1,7 @@
-// mapping-table.tsx — Step2 的批量映射表。
-// 设计参照 Airbyte 的 namespace/stream 映射：默认与源同名（占位符展示生效名，
-// 与 server 端 EffectiveTarget 兜底一致）、批量命名规则（目标 schema 重映射 +
-// 前缀/后缀）、逐行覆盖、目标存在性徽标与冲突检测。
+// mapping-table.tsx — batch mapping table for Step 2.
+// Design follows Airbyte's namespace/stream mapping: defaults mirror the source name (the placeholder
+// shows the effective name, consistent with the server-side EffectiveTarget fallback), bulk naming rules
+// (target schema remapping + prefix/suffix), per-row overrides, target-existence badges and conflict detection.
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
@@ -40,7 +40,7 @@ export function MappingTable({
 
   const destructive = spec.defaults.mode === "replace" || spec.defaults.mode === "truncate"
 
-  // 目标库一次拉全量表清单：存在性徽标 + 重映射 schema 候选
+  // fetch the target's full table list once: existence badges + schema remap candidates
   const { data: tgtDiscover, isFetching: tgtFetching } = useQuery({
     queryKey: ["wizard-target-discover", spec.target_conn],
     queryFn: () => api.discover(spec.target_conn, "table"),
@@ -75,12 +75,12 @@ export function MappingTable({
     setSpec({ ...spec, streams: next })
   }
 
-  /** 批量规则应用：目标 schema 重映射 + 前缀/后缀（显式写入，仍可逐行微调） */
+  /** Apply bulk rules: target schema remapping + prefix/suffix (written explicitly, still tweakable per row) */
   function applyRules() {
     const next = spec.streams.map((s) => {
       if (s.disabled) return s
       const src = s.source_object ?? ""
-      if (!src || hasWildcard(src) || src.includes("/")) return s // 表流才参与规则
+      if (!src || hasWildcard(src) || src.includes("/")) return s // only table streams take part in rules
       const { schema, table } = splitObject(src)
       const targetSchema = ruleSchema === KEEP_SCHEMA ? schema : ruleSchema
       const name = `${rulePrefix}${table}${ruleSuffix}`
@@ -97,7 +97,7 @@ export function MappingTable({
     })
   }
 
-  // 汇总
+  // summary
   const summary = useMemo(() => {
     let exists = 0
     let fresh = 0
@@ -116,7 +116,7 @@ export function MappingTable({
 
   return (
     <div className="space-y-3">
-      {/* 批量命名规则（≥2 流时显示） */}
+      {/* Bulk naming rules (shown with ≥2 streams) */}
       {streams.length > 1 && targetIsDb && (
         <div className="rounded-xl border bg-muted/20 p-3">
           <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -169,7 +169,7 @@ export function MappingTable({
         </div>
       )}
 
-      {/* 映射表 */}
+      {/* Mapping table */}
       <div className="overflow-hidden rounded-xl border">
         <div className="scrollbar-thin max-h-96 overflow-y-auto">
           {spec.streams.map((s, idx) => {
@@ -200,7 +200,7 @@ export function MappingTable({
                     onChange={(e) => setStream(idx, { target_object: e.target.value })}
                   />
                 </div>
-                {/* 状态徽标：冲突 > 必填缺失 > 存在性 */}
+                {/* Status badges: conflict > missing required > existence */}
                 {issue === "conflict" ? (
                   <Badge variant="outline" className="shrink-0 gap-1 border-destructive/40 bg-destructive/10 text-[10px] text-destructive">
                     <TriangleAlert className="size-3" /> {t("jobs.mapping.conflict")}
@@ -242,7 +242,7 @@ export function MappingTable({
           })}
         </div>
 
-        {/* 汇总条 */}
+        {/* Summary bar */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           {tgtFetching ? (
             <span>{t("jobs.mapping.checking")}</span>

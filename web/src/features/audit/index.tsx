@@ -1,4 +1,4 @@
-// 审计日志：action/实体类型筛选 + 分页浏览配置与运行操作痕迹
+// Audit log: action/entity-type filters + paged browsing of configuration and run operations
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
@@ -18,7 +18,7 @@ const PAGE_SIZE = 20
 const ACTIONS = ["create", "update", "delete", "run", "cancel", "rollback", "import", "duplicate", "backup", "prune", "misfire"]
 const ENTITY_TYPES = ["job", "connection", "setting", "run", "channel", "backup"]
 
-// action → badge 配色分类
+// action → badge tone mapping
 const ACTION_TONE: Record<string, string> = {
   create: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
   update: "bg-muted text-muted-foreground",

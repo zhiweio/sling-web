@@ -33,7 +33,10 @@
       "resume": "恢复调度"
     },
     "unreadCount": "{{count}} 条未读通知",
-    "serverRunning": "sling-server 运行中"
+    "serverRunning": "sling-server 运行中",
+    "docTitle": "sling 数据迁移工作台",
+    "docTitleRunning": "{{name}} · 运行中 · sling",
+    "defaultJobName": "任务"
   },
   "dashboard": {
     "title": "总览",
@@ -46,6 +49,7 @@
     "upcoming": "即将运行",
     "recentRuns": "最近执行",
     "connHealth": "连接健康",
+    "trendTip": "{{day}} · {{runs}} 次 · 成功 {{success}}",
     "emptyTitle": "还没有任何迁移任务",
     "emptyBody": "先创建数据源和目标连接，然后通过向导 3 分钟完成第一个迁移任务。",
     "emptyCta": "开始使用"
@@ -67,13 +71,21 @@
     "deleteConfirmBody": "连接 {{name}} 将被删除，其加密凭据也会一并清除。",
     "importTitle": "从环境导入",
     "importBody": "检测到本机 Sling 环境中已有 {{count}} 个连接，可一键导入并加密保存。",
+    "importSuccess": "已导入 {{count}} 个连接：{{names}}",
+    "importNone": "未发现可导入的连接",
     "emptyTitle": "还没有连接",
     "emptyBody": "创建你的第一个数据源连接，例如本地文件、SQLite 或 PostgreSQL。",
+    "kindDatabase": "数据库",
+    "kindFile": "文件 / 云存储",
+    "kindApi": "API",
     "schema": "数据结构",
     "preview": "数据预览",
     "props": "配置信息",
     "emptySchema": "暂无表结构信息，请先测试连接。",
-    "nameExists": "连接名已存在"
+    "nameExists": "连接名已存在",
+    "nameLabel": "连接名称",
+    "nameHelper": "将用于任务中引用此连接",
+    "previewRows": "{{count}} 行示例"
   },
   "jobs": {
     "title": "迁移任务",
@@ -94,6 +106,7 @@
     "runConfirmBodyDestructive": "该任务为「全量覆盖」模式，运行后将删除并重建目标表 {{table}}。确定继续？",
     "runConfirmTablesMore": "{{tables}} 等 {{count}} 张表",
     "streams": "{{count}} 张表",
+    "runTriggered": "已触发「{{name}}」",
     "wizard": {
       "titleNew": "新建迁移任务",
       "titleEdit": "编辑迁移任务",
@@ -230,6 +243,14 @@
       "missing": "缺少",
       "hint": "多字段用英文逗号分隔；通配符流在运行时自动推断",
       "resetToDefault": "恢复默认"
+    },
+    "cronPresets": {
+      "5min": "每 5 分钟",
+      "hourly": "每小时",
+      "daily6": "每天 06:00",
+      "daily9": "每天 09:00",
+      "daily2am": "每天 02:00",
+      "weeklyMon": "每周一 09:00"
     }
   },
   "runs": {
@@ -254,7 +275,12 @@
     "emptyBody": "运行一个迁移任务后，这里会显示实时进度与历史。",
     "failedWhy": "失败原因",
     "searchPlaceholder": "搜索任务名…",
-    "allTriggers": "全部触发"
+    "allTriggers": "全部触发",
+    "cancelSent": "已发送取消信号",
+    "startTime": "开始时间",
+    "pauseScroll": "暂停滚动",
+    "autoScroll": "自动滚动",
+    "waitingLogs": "等待日志输出…"
   },
   "settings": {
     "title": "设置",
@@ -333,6 +359,7 @@
     "error": "出错了",
     "saved": "已保存",
     "copied": "已复制",
+    "copy": "复制",
     "yes": "是",
     "no": "否",
     "close": "关闭",
@@ -349,7 +376,36 @@
     "sortByNextRun": "下次运行",
     "allStatus": "全部状态",
     "allTypes": "全部类型",
-    "allSchedules": "全部调度"
+    "allSchedules": "全部调度",
+    "relTime": {
+      "now": "刚刚",
+      "secondsAgo": "{{n}} 秒前",
+      "minutesAgo": "{{n}} 分钟前",
+      "hoursAgo": "{{n}} 小时前",
+      "daysAgo": "{{n}} 天前"
+    },
+    "countdown": {
+      "soon": "即将运行",
+      "seconds": "{{n}} 秒后",
+      "minutes": "{{n}} 分钟后",
+      "hoursMinutes": "{{h}} 小时 {{m}} 分后",
+      "days": "{{n}} 天后"
+    },
+    "cron": {
+      "manual": "手动",
+      "everyNMinutes": "每 {{n}} 分钟",
+      "everyNHours": "每 {{n}} 小时",
+      "everyMinute": "每分钟",
+      "daily": "每天 {{time}}",
+      "weekdayAt": "{{day}} {{time}}",
+      "sun": "周日",
+      "mon": "周一",
+      "tue": "周二",
+      "wed": "周三",
+      "thu": "周四",
+      "fri": "周五",
+      "sat": "周六"
+    }
   },
   "analysis": {
     "title": "运行前分析",

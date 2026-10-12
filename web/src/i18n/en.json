@@ -33,7 +33,10 @@
       "resume": "Resume Schedule"
     },
     "unreadCount": "{{count}} unread notifications",
-    "serverRunning": "sling-server running"
+    "serverRunning": "sling-server running",
+    "docTitle": "sling-server · Data Migration Workbench",
+    "docTitleRunning": "{{name}} · running · sling",
+    "defaultJobName": "job"
   },
   "dashboard": {
     "title": "Overview",
@@ -46,6 +49,7 @@
     "upcoming": "Upcoming",
     "recentRuns": "Recent runs",
     "connHealth": "Connection health",
+    "trendTip": "{{day}} · {{runs}} runs · {{success}} succeeded",
     "emptyTitle": "No migrations yet",
     "emptyBody": "Create source and target connections, then finish your first migration in 3 minutes with the wizard.",
     "emptyCta": "Get started"
@@ -67,13 +71,21 @@
     "deleteConfirmBody": "Connection {{name}} and its encrypted credentials will be removed.",
     "importTitle": "Import from environment",
     "importBody": "Found {{count}} existing sling connection(s) on this machine. Import to store them encrypted.",
+    "importSuccess": "Imported {{count}} connection(s): {{names}}",
+    "importNone": "No importable connections found",
     "emptyTitle": "No connections",
     "emptyBody": "Create your first data source — local files, SQLite or PostgreSQL.",
+    "kindDatabase": "Database",
+    "kindFile": "Files / Cloud Storage",
+    "kindApi": "API",
     "schema": "Schema",
     "preview": "Data preview",
     "props": "Properties",
     "emptySchema": "No schema yet — test the connection first.",
-    "nameExists": "Name already exists"
+    "nameExists": "Name already exists",
+    "nameLabel": "Connection Name",
+    "nameHelper": "Used to reference this connection in jobs",
+    "previewRows": "{{count}} sample rows"
   },
   "jobs": {
     "title": "Jobs",
@@ -94,6 +106,7 @@
     "runConfirmBodyDestructive": "This job uses Full Refresh: target table {{table}} will be dropped and recreated. Continue?",
     "runConfirmTablesMore": "{{tables}} and {{count}} more",
     "streams": "{{count}} tables",
+    "runTriggered": "Triggered \"{{name}}\"",
     "wizard": {
       "titleNew": "New Migration Job",
       "titleEdit": "Edit Migration Job",
@@ -230,6 +243,14 @@
       "missing": "Missing",
       "hint": "Multiple fields comma separated; wildcard streams infer at run time",
       "resetToDefault": "Reset to default"
+    },
+    "cronPresets": {
+      "5min": "Every 5 min",
+      "hourly": "Hourly",
+      "daily6": "Daily 06:00",
+      "daily9": "Daily 09:00",
+      "daily2am": "Daily 02:00",
+      "weeklyMon": "Mondays 09:00"
     }
   },
   "runs": {
@@ -254,7 +275,12 @@
     "emptyBody": "Run a job and live progress will appear here.",
     "failedWhy": "Why it failed",
     "searchPlaceholder": "Search job name…",
-    "allTriggers": "All triggers"
+    "allTriggers": "All triggers",
+    "cancelSent": "Cancel signal sent",
+    "startTime": "Start time",
+    "pauseScroll": "Pause auto-scroll",
+    "autoScroll": "Auto-scroll",
+    "waitingLogs": "Waiting for log output…"
   },
   "settings": {
     "title": "Settings",
@@ -333,6 +359,7 @@
     "error": "Something went wrong",
     "saved": "Saved",
     "copied": "Copied",
+    "copy": "Copy",
     "yes": "Yes",
     "no": "No",
     "close": "Close",
@@ -349,7 +376,36 @@
     "sortByNextRun": "Next run",
     "allStatus": "All statuses",
     "allTypes": "All types",
-    "allSchedules": "All schedules"
+    "allSchedules": "All schedules",
+    "relTime": {
+      "now": "Just now",
+      "secondsAgo": "{{n}}s ago",
+      "minutesAgo": "{{n}}m ago",
+      "hoursAgo": "{{n}}h ago",
+      "daysAgo": "{{n}}d ago"
+    },
+    "countdown": {
+      "soon": "Due now",
+      "seconds": "in {{n}}s",
+      "minutes": "in {{n}}m",
+      "hoursMinutes": "in {{h}}h {{m}}m",
+      "days": "in {{n}}d"
+    },
+    "cron": {
+      "manual": "Manual",
+      "everyNMinutes": "Every {{n}} min",
+      "everyNHours": "Every {{n}} h",
+      "everyMinute": "Every minute",
+      "daily": "Daily {{time}}",
+      "weekdayAt": "{{day}} {{time}}",
+      "sun": "Sun",
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat"
+    }
   },
   "analysis": {
     "title": "Pre-run Analysis",

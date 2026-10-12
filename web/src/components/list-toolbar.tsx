@@ -1,5 +1,5 @@
-// 列表页统一工具栏与分页：搜索 + 筛选（children 传入 Select）+ 排序 + 分页脚注。
-// /connections、/jobs、/runs 与向导连接选择器共用同一套交互语言。
+// Shared list-page toolbar and pagination: search + filters (Selects via children) + sort + pagination footer.
+// /connections, /jobs, /runs and the wizard connection picker share the same interaction language.
 import { useTranslation } from "react-i18next"
 import { ChevronLeft, ChevronRight, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -54,7 +54,7 @@ export function ListToolbar({
   )
 }
 
-/** 分页脚注：左侧总数 + 右侧 ‹ 当前/总页 › 翻页器；仅一页时不渲染 */
+/** Pagination footer: total count on the left + ‹ current/total pages › pager on the right; hidden when there is only one page */
 export function ListPagination({
   total,
   page,
@@ -102,7 +102,7 @@ export function ListPagination({
   )
 }
 
-/** 筛选无结果的空态（区别于完全无数据）：提示 + 一键清除 */
+/** Empty state for filtered-out results (as opposed to no data at all): hint + one-click clear */
 export function NoMatchState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
   const { t } = useTranslation()
   return (

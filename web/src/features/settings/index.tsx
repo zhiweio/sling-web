@@ -1,4 +1,4 @@
-// 设置：语言/主题/通知/保留策略/备份/关于
+// Settings: language / theme / notifications / retention / backup / about
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
@@ -20,7 +20,7 @@ export default function Settings() {
   const { data: version } = useQuery({ queryKey: ["version"], queryFn: api.version })
 
   useEffect(() => {
-    document.title = "sling 数据迁移工作台"
+    document.title = i18n.t("app.docTitle")
   }, [])
 
   return (

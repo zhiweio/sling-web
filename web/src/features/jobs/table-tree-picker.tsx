@@ -1,7 +1,7 @@
-// table-tree-picker.tsx — Step1 的 schema → 表 分组树选择器。
-// 设计参照 Airbyte/Fivetran 的流选择：schema 节点三态勾选（全选/半选）+
-// 搜索自动展开 + 大列表虚拟滚动（@tanstack/react-virtual）。
-// 选中状态仍以 schema.table 全名写入 spec.streams，与既有向导逻辑兼容。
+// table-tree-picker.tsx — schema → table grouped tree picker for Step 1.
+// Design follows Airbyte/Fivetran stream selection: tri-state schema checkboxes (all/partial) +
+// auto-expand on search + virtualized scrolling for long lists (@tanstack/react-virtual).
+// Selection is still stored as full schema.table names in spec.streams, compatible with the existing wizard logic.
 import { useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useVirtualizer } from "@tanstack/react-virtual"
@@ -41,7 +41,7 @@ export function TableTreePicker({ schemas, selected, onToggle, onSetMany }: Tabl
 
   const needle = q.trim().toLowerCase()
 
-  // 过滤后的 schema（搜索时只保留命中的表）
+  // filtered schemas (search keeps only matching tables)
   const filtered = useMemo(() => {
     if (!needle) return schemas
     return schemas
@@ -52,7 +52,7 @@ export function TableTreePicker({ schemas, selected, onToggle, onSetMany }: Tabl
       .filter((s) => s.tables.length > 0)
   }, [schemas, needle])
 
-  // 展开的 schema：搜索时全部展开；否则非折叠的
+  // expanded schemas: all expanded while searching; otherwise the non-collapsed ones
   const expanded = useMemo(() => {
     const set = new Set<string>()
     for (const s of filtered) {
@@ -68,7 +68,7 @@ export function TableTreePicker({ schemas, selected, onToggle, onSetMany }: Tabl
   )
   const allFilteredSelected = totalFiltered > 0 && selectedFiltered === totalFiltered
 
-  // 扁平化虚拟行：schema 头 + 展开的表行
+  // flattened virtual rows: schema headers + expanded table rows
   const rows = useMemo(() => {
     const out: Row[] = []
     for (const s of filtered) {
@@ -101,7 +101,7 @@ export function TableTreePicker({ schemas, selected, onToggle, onSetMany }: Tabl
 
   return (
     <div className="overflow-hidden rounded-xl border">
-      {/* 搜索 + 全选/清空 */}
+      {/* Search + select all/clear */}
       <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2">
         <Search className="size-3.5 shrink-0 text-muted-foreground" />
         <input

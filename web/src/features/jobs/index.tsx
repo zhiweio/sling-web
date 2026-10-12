@@ -1,4 +1,4 @@
-// 任务列表：搜索（名称/源/目标）/调度筛选/排序/分页 + 卡片操作（运行/暂停/复制/导出/删除）
+// Jobs list: search (name/source/target) + schedule filter + sort + pagination + card actions (run/pause/duplicate/export/delete)
 import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -69,7 +69,7 @@ export default function Jobs() {
 
   useEffect(() => setPage(0), [q, schedF, sort])
 
-  // 源/目标连接名（从 spec_json 提取一次，供搜索）
+  // source/target connection names (extracted once from spec_json, for search)
   const connsOf = useMemo(() => {
     const m = new Map<string, [string, string]>()
     for (const j of data?.jobs ?? []) {
@@ -242,7 +242,7 @@ function JobRow({ job, onDelete, onAnalyze }: { job: Job; onDelete: () => void; 
   const run = useMutation({
     mutationFn: () => api.runJob(job.id),
     onSuccess: () => {
-      toast.success(`已触发「${job.name}」`)
+      toast.success(t("jobs.runTriggered", { name: job.name }))
       qc.invalidateQueries({ queryKey: ["runs"] })
     },
     onError: (e) => toast.error(e.message),
@@ -257,7 +257,7 @@ function JobRow({ job, onDelete, onAnalyze }: { job: Job; onDelete: () => void; 
   const dup = useMutation({
     mutationFn: () => api.duplicateJob(job.id),
     onSuccess: () => {
-      toast.success("已复制")
+      toast.success(t("common.copied"))
       qc.invalidateQueries({ queryKey: ["jobs"] })
     },
     onError: (e) => toast.error(e.message),

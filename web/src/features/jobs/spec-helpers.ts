@@ -1,5 +1,5 @@
-// spec-helpers.ts — 前端镜像 server 端 spec.go 的语义（EffectiveTarget 等），
-// 用于向导的占位符、冲突检测与本地 YAML 预览，保证“所见即所跑”。
+// spec-helpers.ts — frontend mirror of the server-side spec.go semantics (EffectiveTarget etc.),
+// used for wizard placeholders, conflict detection and the local YAML preview, so what you see is what runs.
 
 export function hasWildcard(s: string): boolean {
   return /[*?]/.test(s)
@@ -11,9 +11,10 @@ export function isQuerySrc(s: string): boolean {
 }
 
 /**
- * 解析流的目标表名：显式值优先；表流默认与源同名（返回源全名占位）；
- * 通配符表流返回 sling 变量模板；查询流 / 具体文件路径必须显式指定（返回 ""）。
- * 与 server 端 EffectiveTarget 保持一致。
+ * Resolve a stream's target table name: explicit value wins; table streams default to
+ * the source name (returns the full source name as the placeholder); wildcard table
+ * streams return a sling variable template; query streams / concrete file paths must
+ * be explicit (returns ""). Consistent with the server-side EffectiveTarget.
  */
 export function effectiveTarget(source: string, target?: string): string {
   if (target) return target
@@ -30,7 +31,7 @@ export interface MappingIssue {
   reason: "conflict" | "required"
 }
 
-/** 目标映射校验：非通配流的目标名冲突、必须显式却为空的流。 */
+/** Target mapping validation: duplicate target names for non-wildcard streams, and streams that must be explicit but are empty. */
 export function mappingIssues(spec: {
   streams?: { source_object?: string; target_object?: string; disabled?: boolean }[]
 }): MappingIssue[] {
@@ -45,7 +46,7 @@ export function mappingIssues(spec: {
       issues.push({ source: src, reason: "required" })
       continue
     }
-    if (hasWildcard(src)) continue // 展开期才能确定，静态不判冲突
+    if (hasWildcard(src)) continue // resolved at expansion time; no static conflict check
     const key = eff.toLowerCase()
     if (seen.has(key)) {
       issues.push({ source: src, reason: "conflict" })
@@ -56,7 +57,7 @@ export function mappingIssues(spec: {
   return issues
 }
 
-/** 源对象拆出 schema 与表名（按最后一个点分隔，无 schema 时返回空）。 */
+/** Split a source object into schema and table (by the last dot; empty schema when there is none). */
 export function splitObject(obj: string): { schema: string; table: string } {
   const idx = obj.lastIndexOf(".")
   if (idx <= 0) return { schema: "", table: obj }

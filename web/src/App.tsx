@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { AppShell } from "@/components/layout/app-shell"
 import { useSSE } from "@/lib/sse"
 import type { RunSnapshot } from "@/lib/types"
+import i18n from "@/i18n"
 import { Toaster } from "@/components/ui/sonner"
 
 const Dashboard = lazy(() => import("@/features/dashboard"))
@@ -24,7 +25,7 @@ function Loading() {
   )
 }
 
-/** 全局 SSE：运行事件实时刷新缓存 */
+/** Global SSE bridge: run events refresh query caches in real time */
 function SseBridge() {
   const qc = useQueryClient()
   const location = useLocation()
@@ -41,12 +42,12 @@ function SseBridge() {
             }
           : old,
       )
-      // 运行中的详情页本地状态
+      // local cache for the running run's detail page
       qc.setQueryData(["run", snap.run_id], snap)
       if (snap.status === "running") {
-        document.title = `${snap.job_name ?? "任务"} · 运行中 · sling`
+        document.title = i18n.t("app.docTitleRunning", { name: snap.job_name ?? i18n.t("app.defaultJobName") })
       } else {
-        document.title = "sling 数据迁移工作台"
+        document.title = i18n.t("app.docTitle")
         qc.invalidateQueries({ queryKey: ["runs"] })
         qc.invalidateQueries({ queryKey: ["jobs"] })
         qc.invalidateQueries({ queryKey: ["stats"] })
@@ -60,9 +61,9 @@ function SseBridge() {
   })
 
   useEffect(() => {
-    // 页面切换时恢复标题（详情页可能设置自定义标题）
+    // restore the base title on page change (the detail page may have set a custom one)
     return () => {
-      document.title = "sling 数据迁移工作台"
+      document.title = i18n.t("app.docTitle")
     }
   }, [location.pathname])
 

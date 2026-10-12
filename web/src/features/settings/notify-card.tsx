@@ -1,4 +1,4 @@
-// 设置·通知：成功/失败通知开关 + 全局通知渠道(企微/飞书/钉钉/Slack/通用)
+// Settings · notifications: success/failure switches + global notification channels (WeCom/Feishu/DingTalk/Slack/generic)
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -59,7 +59,7 @@ export function NotifyCard() {
         <CardDescription>{t("settings.notifyDesc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* 事件开关 */}
+        {/* Event switches */}
         <div className="space-y-3">
           <SettingSwitch
             label={t("settings.notifyOnSuccess")}
@@ -73,7 +73,7 @@ export function NotifyCard() {
           />
         </div>
 
-        {/* 渠道列表 */}
+        {/* Channel list */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">{t("settings.notifyChannels")}</span>

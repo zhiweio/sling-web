@@ -1,4 +1,4 @@
-// 连接中心：卡片网格（搜索/类型/状态筛选 + 排序 + 分页）+ 添加向导 + 详情
+// Connections hub: card grid (search/type/status filters + sort + pagination) + add wizard + detail
 import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -41,6 +41,7 @@ const PAGE_SIZE = 12
 
 export default function Connections() {
   const { t } = useTranslation()
+  const qc = useQueryClient()
   const { name: selected } = useParams()
   const [q, setQ] = useState("")
   const [typeF, setTypeF] = useState("all")
@@ -180,6 +181,7 @@ export default function Connections() {
           onClose={() => setWizardOpen(false)}
           onSaved={() => {
             setWizardOpen(false)
+            qc.invalidateQueries({ queryKey: ["conns"] })
             toast.success(t("common.saved"))
           }}
         />
@@ -283,10 +285,10 @@ function ImportButton() {
     onSuccess: (res) => {
       const imported = res.imported ?? []
       if (imported.length > 0) {
-        toast.success(`已导入 ${imported.length} 个连接：${imported.join(", ")}`)
+        toast.success(t("connections.importSuccess", { count: imported.length, names: imported.join(", ") }))
         qc.invalidateQueries({ queryKey: ["conns"] })
       } else {
-        toast.info("未发现可导入的连接")
+        toast.info(t("connections.importNone"))
       }
     },
     onError: (e) => toast.error(e.message),
@@ -299,7 +301,7 @@ function ImportButton() {
   )
 }
 
-/* ------------------------------- 添加向导 -------------------------------- */
+/* -------------------------------- Add wizard ------------------------------ */
 
 function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation()
@@ -360,7 +362,7 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
           <DialogDescription className="sr-only">{t("connections.addTitle")}</DialogDescription>
         </DialogHeader>
 
-        {/* 步骤指示 */}
+        {/* Step indicator */}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {[t("connections.stepType"), t("connections.stepProps"), t("connections.stepDone")].map((s, i) => (
             <div key={s} className="flex items-center gap-2">
@@ -384,7 +386,7 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
               grouped[kind]?.length ? (
                 <div key={kind}>
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {kind === "database" ? "数据库" : kind === "file" ? "文件 / 云存储" : "API"}
+                    {kind === "database" ? t("connections.kindDatabase") : kind === "file" ? t("connections.kindFile") : t("connections.kindApi")}
                   </div>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {grouped[kind].map((ty) => (
@@ -411,7 +413,7 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
         {step === 1 && typeDef && (
           <div className="space-y-4">
             <div>
-              <Label htmlFor="conn-name">连接名称 *</Label>
+              <Label htmlFor="conn-name">{t("connections.nameLabel")} *</Label>
               <Input
                 id="conn-name"
                 value={name}
@@ -419,7 +421,7 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
                 placeholder={(typeDef.properties?.find((p) => p.name === "name")?.examples ?? ["MY_CONN"])[0]}
                 className="mt-1.5"
               />
-              <p className="mt-1 text-xs text-muted-foreground">将用于任务中引用此连接</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("connections.nameHelper")}</p>
             </div>
 
             {(typeDef.properties ?? [])
@@ -561,7 +563,7 @@ function PropField({
   )
 }
 
-/* -------------------------------- 连接详情 ------------------------------- */
+/* ------------------------------ Connection detail --------------------------- */
 
 function ConnDetail({ name }: { name: string }) {
   const { t } = useTranslation()
@@ -677,6 +679,7 @@ function ConnDetail({ name }: { name: string }) {
 }
 
 function TablePreviewRow({ connName, table, name, isView }: { connName: string; table: string; name: string; isView?: boolean }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const { data } = useQuery({
     queryKey: ["conn-preview", connName, table],
@@ -699,12 +702,12 @@ function TablePreviewRow({ connName, table, name, isView }: { connName: string; 
           )}
           <span className="truncate font-mono">{name}</span>
         </span>
-        {open && <span className="ml-auto text-muted-foreground">{rows.length} 行示例</span>}
+        {open && <span className="ml-auto text-muted-foreground">{t("connections.previewRows", { count: rows.length })}</span>}
       </button>
       {open && (
         <div className="overflow-x-auto border-t bg-muted/30 px-3 py-2">
           {rows.length === 0 ? (
-            <span className="text-xs text-muted-foreground">{t0("common.loading")}</span>
+            <span className="text-xs text-muted-foreground">{t("common.loading")}</span>
           ) : (
             <table className="w-full text-left text-[11px]">
               <thead>
@@ -734,8 +737,4 @@ function TablePreviewRow({ connName, table, name, isView }: { connName: string; 
       )}
     </div>
   )
-}
-
-function t0(key: string) {
-  return key.split(".").pop() ?? key
 }

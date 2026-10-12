@@ -1,4 +1,4 @@
-// 空状态（引导插画 + CTA）
+// Empty state (guidance illustration + CTA)
 import { Button } from "@/components/ui/button"
 
 export function EmptyState({

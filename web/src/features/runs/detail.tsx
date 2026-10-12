@@ -1,4 +1,4 @@
-// 运行详情：SSE 实时进度 + 日志终端（虚拟滚动简化版：窗口化追加）+ 取消 + 流明细
+// Run detail: SSE live progress + log terminal (simplified virtual scrolling: windowed append) + cancel + stream details
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useMutation, useQuery } from "@tanstack/react-query"
@@ -26,7 +26,7 @@ export default function RunDetail() {
     queryFn: () => api.getRun(id!),
   })
 
-  // 本地实时快照（SSE 覆盖）
+  // local live snapshot (overwritten by SSE)
   const [snap, setSnap] = useState<RunSnapshot | null>(null)
   const [logs, setLogs] = useState<string[]>([])
   const [logFilter, setLogFilter] = useState("")
@@ -34,7 +34,7 @@ export default function RunDetail() {
   const logRef = useRef<HTMLDivElement>(null)
   const loadedLogsRef = useRef(false)
 
-  // SSE 订阅
+  // SSE subscription
   useEffect(() => {
     if (!id) return
     const es = new EventSource("/api/events")
@@ -54,7 +54,7 @@ export default function RunDetail() {
     return () => es.close()
   }, [id])
 
-  // 初始日志回放（仅一次）
+  // initial log replay (once only)
   useEffect(() => {
     if (loadedLogsRef.current || !id) return
     loadedLogsRef.current = true
@@ -63,7 +63,7 @@ export default function RunDetail() {
     }).catch(() => {})
   }, [id])
 
-  // 自动滚动
+  // auto-scroll
   useEffect(() => {
     if (autoFollow && logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight
@@ -72,7 +72,7 @@ export default function RunDetail() {
 
   const cancel = useMutation({
     mutationFn: () => api.cancelRun(id!),
-    onSuccess: () => toast.success("已发送取消信号"),
+    onSuccess: () => toast.success(t("runs.cancelSent")),
     onError: (e) => toast.error(e.message),
   })
 
@@ -102,13 +102,13 @@ export default function RunDetail() {
         </div>
       </div>
 
-      {/* 指标条 */}
+      {/* Metric bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Metric label={t("runs.rows")} value={formatNumber(data.rows)} highlight />
         <Metric label={t("runs.bytes")} value={formatBytes(data.bytes)} />
         <Metric label={t("runs.rate")} value={formatRate(data.rate)} />
         <Metric label={t("runs.duration")} value={formatDuration(data.duration_ms)} />
-        <Metric label="开始时间" value={formatTime(data.start_time)} />
+        <Metric label={t("runs.startTime")} value={formatTime(data.start_time)} />
       </div>
 
       {data.progress && running && (
@@ -127,7 +127,7 @@ export default function RunDetail() {
         </div>
       )}
 
-      {/* 流明细（replication） */}
+      {/* Stream details (replication) */}
       {(data.streams ?? []).length > 0 && (
         <section>
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("runs.streamDetail")}</h2>
@@ -143,7 +143,7 @@ export default function RunDetail() {
         </section>
       )}
 
-      {/* 日志终端 */}
+      {/* Log terminal */}
       <section>
         <div className="mb-2 flex items-center gap-2">
           <Terminal className="size-4 text-muted-foreground" />
@@ -165,11 +165,11 @@ export default function RunDetail() {
           >
             {autoFollow ? (
               <>
-                <Pause className="size-3.5" /> 暂停滚动
+                <Pause className="size-3.5" /> {t("runs.pauseScroll")}
               </>
             ) : (
               <>
-                <Play className="size-3.5" /> 自动滚动
+                <Play className="size-3.5" /> {t("runs.autoScroll")}
               </>
             )}
           </Button>
@@ -199,7 +199,7 @@ export default function RunDetail() {
           className="scrollbar-thin h-96 overflow-y-auto rounded-xl bg-zinc-950 p-4 font-mono text-[11px] leading-relaxed text-zinc-300"
         >
           {filteredLogs.length === 0 ? (
-            <span className="text-zinc-600">等待日志输出…</span>
+            <span className="text-zinc-600">{t("runs.waitingLogs")}</span>
           ) : (
             filteredLogs.map((l, i) => <LogLineView key={i} line={l} />)
           )}

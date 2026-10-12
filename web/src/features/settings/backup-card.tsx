@@ -1,4 +1,4 @@
-// 设置·数据备份:自动备份(频率/保留份数)+ 立即备份 + 快照文件列表(下载/删除)+ 手动恢复说明
+// Settings · backup: automatic backups (frequency/keep count) + back up now + snapshot list (download/delete) + manual restore instructions
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -25,7 +25,7 @@ import {
 import { formatBytes, formatTime } from "@/lib/format"
 import type { BackupFile } from "@/lib/types"
 
-// 频率预设 → cron
+// frequency preset → cron
 const FREQ_PRESETS = [
   { value: "0 3 * * *", key: "settings.backupFreqDaily" },
   { value: "0 */6 * * *", key: "settings.backupFreq6h" },
@@ -71,7 +71,7 @@ export function BackupCard() {
         <CardDescription>{t("settings.backupDesc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {/* 自动备份配置 */}
+        {/* Automatic backup settings */}
         <div className="space-y-3">
           <label className="flex cursor-pointer items-center justify-between text-sm">
             <span>{t("settings.backupAuto")}</span>
@@ -117,7 +117,7 @@ export function BackupCard() {
           <HardDriveDownload className="size-4" /> {t("settings.backupNow")}
         </Button>
 
-        {/* 备份文件列表 */}
+        {/* Snapshot list */}
         <div className="space-y-2">
           <span className="text-sm font-medium">{t("settings.backupList")}</span>
           {(backups?.backups ?? []).length === 0 ? (
@@ -154,7 +154,7 @@ export function BackupCard() {
           )}
         </div>
 
-        {/* 恢复说明 */}
+        {/* Restore instructions */}
         <div className="flex gap-2 rounded-lg bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
           <Info className="mt-0.5 size-3.5 shrink-0" />
           <span>{t("settings.backupRestoreHint", { dir: backups?.dir ?? "~/.sling/backups" })}</span>

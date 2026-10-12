@@ -1,4 +1,4 @@
-// 通知中心：全部/未读 + 类型筛选，单条已读/全部已读，点击跳转对应运行
+// Notification center: all/unread + type filter, per-item and mark-all-read, click through to the related run
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"

@@ -1,5 +1,5 @@
-// 运行前分析对话框：每张源表的字段/行数/存储 + 汇总指标 + 负载评估
-// 布局：4xl 宽弹窗，固定头/尾 + 中部滚动；汇总带（分割网格）+ 负载面板 + 明细表（粘性表头、可展开字段）
+// Pre-run analysis dialog: columns/rows/storage per source table + summary metrics + load assessment.
+// Layout: 4xl-wide dialog, fixed header/footer + scrolling middle; summary band (divided grid) + load panel + detail table (sticky header, expandable columns).
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useMutation } from "@tanstack/react-query"
@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { formatBytes, formatDuration, formatNumber } from "@/lib/format"
 
-/** 明细表列模板：对象 | 字段 | 行数 | 大小 | 目标 */
+/** Detail table column template: object | cols | rows | size | target */
 const GRID = "grid grid-cols-[minmax(0,1fr)_3rem_5rem_5rem_8.5rem] items-center gap-3"
 
 const LOAD_STYLES = {
@@ -75,7 +75,7 @@ export function AnalysisDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
-        {/* 头部：标题 + 数据链路 + 分析时间（固定不滚动） */}
+        {/* Header: title + data pipeline + analysis time (fixed, does not scroll) */}
         <DialogHeader className="shrink-0 border-b px-6 py-4">
           <DialogTitle className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pr-8 text-base">
             <span className="flex items-center gap-2">
@@ -97,7 +97,7 @@ export function AnalysisDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {/* 中部：可滚动内容区 */}
+        {/* Middle: scrollable content area */}
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {analyze.isPending && (
             <div className="flex flex-col items-center gap-3 py-20 text-muted-foreground">
@@ -116,7 +116,7 @@ export function AnalysisDialog({
 
           {data && (
             <div className="space-y-5">
-              {/* 汇总指标带：分割网格，数值大字号 */}
+              {/* Summary band: divided grid, large numbers */}
               <div className="grid grid-cols-3 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-5">
                 <Stat label={t("analysis.tables")} value={formatNumber(data.totals.tables)} />
                 <Stat label={t("analysis.columns")} value={formatNumber(data.totals.columns)} />
@@ -135,7 +135,7 @@ export function AnalysisDialog({
                 />
               </div>
 
-              {/* 负载评估面板：级别 + 预计耗时 + 说明 */}
+              {/* Load assessment panel: level + estimated duration + explanation */}
               <div className={cn("flex flex-wrap items-center gap-x-8 gap-y-4 rounded-xl border p-4", loadStyle.panel)}>
                 <div className="flex items-center gap-3">
                   <span className={cn("flex size-10 items-center justify-center rounded-lg", loadStyle.chip)}>
@@ -167,7 +167,7 @@ export function AnalysisDialog({
                 </p>
               </div>
 
-              {/* 每张表明细：粘性表头 + 可展开字段列表 */}
+              {/* Per-table details: sticky header + expandable column list */}
               <div className="overflow-hidden rounded-xl border">
                 <div
                   className={cn(
@@ -199,7 +199,7 @@ export function AnalysisDialog({
           )}
         </div>
 
-        {/* 底部：刷新 + 数据来源说明（固定不滚动） */}
+        {/* Footer: refresh + data source note (fixed, does not scroll) */}
         {data && (
           <div className="flex shrink-0 items-center justify-between gap-3 border-t px-6 py-3">
             <Button variant="outline" size="sm" onClick={() => analyze.mutate()}>
@@ -213,7 +213,7 @@ export function AnalysisDialog({
   )
 }
 
-/** 分割网格统计单元：细线分隔，无独立卡片边框，降低视觉噪音 */
+/** Divided-grid stat cell: thin separators, no standalone card borders, less visual noise */
 function Stat({ label, value, highlight }: { label: string; value: string; highlight?: string }) {
   return (
     <div className="bg-background px-4 py-3">
@@ -297,7 +297,7 @@ function StreamRow({
 
       {expanded && (
         <div className="space-y-3 border-b bg-muted/20 px-4 py-3">
-          {/* 目标映射：源 → 目标（重命名时才显示） */}
+          {/* Target mapping: source → target (only shown when renamed) */}
           {stream.target_object && stream.target_object !== stream.source_object && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="font-mono">{stream.source_object}</span>
@@ -306,7 +306,7 @@ function StreamRow({
             </div>
           )}
 
-          {/* 字段明细：两/三列网格，名称 + 类型对齐 */}
+          {/* Column details: two/three-column grid, name + type aligned */}
           {hasColumns ? (
             <div>
               <div className="mb-2 text-[11px] font-medium text-muted-foreground">

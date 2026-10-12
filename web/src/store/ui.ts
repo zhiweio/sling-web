@@ -1,4 +1,4 @@
-// src/store/ui.ts — 仅 UI 态（服务端态全部走 TanStack Query）
+// src/store/ui.ts — UI-only state (all server state goes through TanStack Query)
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
@@ -7,7 +7,7 @@ type Theme = "light" | "dark" | "system"
 interface UiState {
   theme: Theme
   setTheme: (t: Theme) => void
-  // 向导草稿（刷新不丢）
+  // wizard draft (survives page reloads)
   wizardDraft: unknown
   setWizardDraft: (d: unknown) => void
   clearWizardDraft: () => void

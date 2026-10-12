@@ -1,4 +1,4 @@
-// 状态徽章 — 统一运行状态视觉语言
+// Status badge — unified visual language for run statuses
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import type { ExecStatus } from "@/lib/types"

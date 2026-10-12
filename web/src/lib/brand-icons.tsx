@@ -1,6 +1,6 @@
-// src/lib/brand-icons.tsx — 数据源官方品牌图标
-// 三级来源：simple-icons（npm 本地打包）→ devicon（SVG 内联）→ 官方品牌色字母徽标。
-// 无任何运行时网络请求。
+// src/lib/brand-icons.tsx — official brand icons for data sources
+// Three-tier sources: simple-icons (bundled from npm) → devicon (inline SVG) →
+// letter monogram in the official brand color. No runtime network requests.
 import type { ComponentType } from "react"
 import {
   siPostgresql,
@@ -33,7 +33,7 @@ import { Database, FolderOpen, Globe, Plug, Server } from "lucide-react"
 
 type SimpleIcon = { title: string; path: string; hex: string }
 
-/** simple-icons 品牌图标映射（连接类型 → 官方图标） */
+/** simple-icons brand icon map (connection type → official icon) */
 const simpleMap: Record<string, SimpleIcon> = {
   postgres: siPostgresql,
   postgresql: siPostgresql,
@@ -57,23 +57,23 @@ const simpleMap: Record<string, SimpleIcon> = {
   r2: siCloudflare,
 }
 
-/** devicon SVG（Oracle / SQL Server / AWS 家族 / Azure 家族 / DynamoDB） */
+/** devicon SVGs (Oracle / SQL Server / AWS family / Azure family / DynamoDB) */
 const deviconMap: Record<string, string> = {
   oracle: oracleSvg,
   sqlserver: mssqlSvg,
   azuresql: mssqlSvg,
-  // AWS 家族（S3/Athena/Redshift 用 AWS 官方标）
+  // AWS family (S3/Athena/Redshift use the official AWS mark)
   s3: awsSvg,
   athena: awsSvg,
   redshift: awsSvg,
-  // Azure 家族
+  // Azure family
   azure: azureSvg,
   azuredwh: azureSvg,
   azuretable: azureSvg,
   dynamodb: dynamoSvg,
 }
 
-/** 亮色品牌底（如黄）配白字不可读，按亮度阈值切换深/浅文字 */
+/** Light brand backgrounds (e.g. yellow) are unreadable with white text — switch dark/light text by luminance threshold */
 function readableTextOn(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255
   const g = parseInt(hex.slice(3, 5), 16) / 255
@@ -81,7 +81,7 @@ function readableTextOn(hex: string): string {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.55 ? "#111827" : "#ffffff"
 }
 
-/** 无官方开源图标的品牌 → 官方品牌色 + 字母徽标 */
+/** Brands without open-source icons → official brand color + letter monogram */
 const monogramMap: Record<string, [string, string]> = {
   firebolt: ["F", "#FE354C"],
   lancedb: ["L", "#7C3AED"],
@@ -92,7 +92,7 @@ const monogramMap: Record<string, [string, string]> = {
   db2: ["DB2", "#0F62FE"],
 }
 
-/** 通用（非品牌）类型 → lucide 图标 */
+/** Generic (non-brand) types → lucide icons */
 const genericMap: Record<string, ComponentType<{ className?: string }>> = {
   local: FolderOpen,
   file: FolderOpen,
@@ -103,8 +103,8 @@ const genericMap: Record<string, ComponentType<{ className?: string }>> = {
 }
 
 /**
- * BrandIcon — 按连接类型渲染官方品牌图标。
- * 统一放在中性圆角芯片里，保证深浅色主题下的对比度与一致性。
+ * BrandIcon — renders the official brand icon for a connection type.
+ * Always wrapped in a neutral rounded chip to keep contrast and consistency across light/dark themes.
  */
 export function BrandIcon({ type, className }: { type: string; className?: string }) {
   const t = type.toLowerCase()

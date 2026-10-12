@@ -1,4 +1,4 @@
-// 运行中心：搜索/状态/触发筛选 + 排序 + 分页；实时卡片（SSE）+ 历史
+// Runs center: search/status/trigger filters + sort + pagination; live cards (SSE) + history
 import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useQuery } from "@tanstack/react-query"
@@ -76,10 +76,10 @@ export default function Runs() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("common.allStatus")}</SelectItem>
-            <SelectItem value="running">运行中</SelectItem>
-            <SelectItem value="success">成功</SelectItem>
-            <SelectItem value="error">失败</SelectItem>
-            <SelectItem value="cancelled">已取消</SelectItem>
+            <SelectItem value="running">{t("status.running")}</SelectItem>
+            <SelectItem value="success">{t("status.success")}</SelectItem>
+            <SelectItem value="error">{t("status.error")}</SelectItem>
+            <SelectItem value="cancelled">{t("status.cancelled")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={trigger} onValueChange={setTrigger}>
@@ -188,7 +188,7 @@ function LiveRunRow({ run, onClick }: { run: { id: string; job_name?: string; st
         <span>{formatDuration(run.duration_ms)}</span>
         <span className="ml-auto">{t(`runs.trigger${cap(run.trigger)}`) ?? run.trigger}</span>
       </div>
-      {/* 运行中的流光边 */}
+      {/* animated light border for running jobs */}
       {run.status === "running" && (
         <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden">
           <div className="h-full w-1/3 animate-[slide_2s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-primary to-transparent" />

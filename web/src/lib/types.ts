@@ -1,4 +1,4 @@
-// src/lib/types.ts — API 类型定义（与 server 包模型一一对应）
+// src/lib/types.ts — API type definitions (mirrors the server package models one-to-one)
 export type ExecStatus =
   | "created"
   | "queued"
@@ -194,14 +194,14 @@ export interface Notification {
   created_at: string
 }
 
-// 通知渠道(企微/飞书/钉钉/Slack/通用 webhook);url 为脱敏值
+// Notification channel (WeCom/Feishu/DingTalk/Slack/generic webhook); url is a masked value
 export interface NotifyChannel {
   id: number
   name: string
   provider: string // wecom|feishu|dingtalk|slack|generic
   url: string
   has_secret: boolean
-  events: string[] // 空数组 = 订阅全部事件
+  events: string[] // empty array = subscribed to all events
   enabled: boolean
   created_at: string
   updated_at: string

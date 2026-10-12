@@ -1,4 +1,4 @@
-// src/lib/sse.ts — EventSource 订阅 hook（自动重连 + 按 run 过滤）
+// src/lib/sse.ts — EventSource subscription hook (auto-reconnect + per-run filtering)
 import { useEffect, useRef } from "react"
 import type { RunSnapshot } from "./types"
 

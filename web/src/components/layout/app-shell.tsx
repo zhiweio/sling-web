@@ -1,4 +1,4 @@
-// 深色侧栏 + 内容区布局（Linear 风格）
+// Dark sidebar + content layout (Linear style)
 import { useEffect, useState } from "react"
 import { NavLink, Link, useLocation } from "react-router-dom"
 import { useTranslation } from "react-i18next"
@@ -42,12 +42,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* 桌面侧栏 */}
+      {/* Desktop sidebar */}
       <aside className="hidden w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex">
         <SidebarContent nav={nav} />
       </aside>
 
-      {/* 移动端抽屉 */}
+      {/* Mobile drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
@@ -58,7 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* 顶栏 */}
+        {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
           <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileOpen(true)}>
             <Menu className="size-4" />
