@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bufio"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -415,5 +417,61 @@ func TestConnsDuplicateNameAndRenameRejected(t *testing.T) {
 	// unknown target fails
 	if _, err := app.Conns.Update("NOPE", UpsertInput{Type: "oracle"}); err == nil {
 		t.Fatal("updating an unknown connection must be rejected")
+	}
+}
+
+// TestSSEEventsStreamThroughMiddleware guards the SSE endpoint against
+// middleware wrappers that hide http.Flusher: without the passthrough the
+// broker answers 500 "streaming unsupported" and every live UI panel freezes.
+func TestSSEEventsStreamThroughMiddleware(t *testing.T) {
+	app := newTestApp(t)
+	ts := httptest.NewServer(app.Handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("events status = %d, want 200 (Flusher passthrough broken)", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/event-stream") {
+		t.Fatalf("content-type = %q", ct)
+	}
+
+	type event struct{ name, data string }
+	got := make(chan event, 8)
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		var name string
+		for sc.Scan() {
+			line := sc.Text()
+			switch {
+			case strings.HasPrefix(line, "event: "):
+				name = strings.TrimPrefix(line, "event: ")
+			case strings.HasPrefix(line, "data: "):
+				got <- event{name, strings.TrimPrefix(line, "data: ")}
+			}
+		}
+	}()
+
+	// wait for the initial ready event, then a published event must arrive
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case ev := <-got:
+			if ev.name == "ready" {
+				app.Broker.Publish(Event{Type: "execution", RunID: "r1", Payload: map[string]any{"rows": 1}})
+			}
+			if ev.name == "execution" {
+				if !strings.Contains(ev.data, "\"run_id\":\"r1\"") {
+					t.Fatalf("execution event payload: %s", ev.data)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("no execution event received over SSE")
+		}
 	}
 }

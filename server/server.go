@@ -204,6 +204,15 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Flush passes the optional Flusher interface through, so the SSE endpoint
+// (/api/events) can stream; without it the type assertion in Broker.ServeHTTP
+// fails and every EventSource connection 500s.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func (a *App) middleware(next http.Handler) http.Handler {
 	var reqID atomic.Int64
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
