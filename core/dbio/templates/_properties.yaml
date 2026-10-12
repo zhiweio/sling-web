@@ -43,8 +43,8 @@ oracle:
     prefetch_rows:
       type: integer
       description: 'Number of rows to fetch per network round-trip. Higher values greatly improve read throughput on large tables. Lower it (e.g. 25) for tables with large BLOB/CLOB columns to reduce memory usage.'
-      examples: ['1000', '5000']
-      default: 100
+      examples: ['2000', '5000']
+      default: 2000
 
 snowflake:
   title: 'Snowflake'

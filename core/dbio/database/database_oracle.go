@@ -129,7 +129,7 @@ func (conn *OracleConn) ConnString() string {
 	// infinite timeout by default. go-ora defaults PrefetchRows to 25, which
 	// forces a network round-trip every 25 rows and cripples large reads.
 	// Overridden below when `prefetch_rows` is set (lower it for LOB-heavy tables).
-	options := map[string]string{"TIMEOUT": "0", "PREFETCH_ROWS": "100"}
+	options := map[string]string{"TIMEOUT": "0", "PREFETCH_ROWS": "2000"}
 
 	// When service_name is explicitly provided, do not forward `sid` as an
 	// option — go-ora's ConnectionConfig prefers SID over ServiceName when
