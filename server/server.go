@@ -220,6 +220,11 @@ func (a *App) middleware(next http.Handler) http.Handler {
 		id := reqID.Add(1)
 		rec := &statusRecorder{ResponseWriter: w, status: 200}
 
+		// registered before the logging defer so suppression outlives the
+		// [http] access line emitted at request end (defers run LIFO)
+		restoreSuppress := a.Router.SuppressGID()
+		defer restoreSuppress()
+
 		defer func() {
 			if p := recover(); p != nil {
 				g.Debug("panic in %s %s: %v", r.Method, r.URL.Path, p)

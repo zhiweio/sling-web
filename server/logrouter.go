@@ -66,6 +66,7 @@ func (rl *runLogs) tail(n int) string {
 type LogRouter struct {
 	mu      sync.RWMutex
 	gidRuns map[uint64]string // goroutine id -> run id
+	noRuns  map[uint64]struct{} // goroutines whose lines never attribute to a run
 	runs    map[string]*runLogs
 	active  map[string]struct{}
 	prev    func(*g.LogLine)
@@ -77,6 +78,7 @@ type LogRouter struct {
 func NewLogRouter(broker *Broker, db *DB) *LogRouter {
 	return &LogRouter{
 		gidRuns: map[uint64]string{},
+		noRuns:  map[uint64]struct{}{},
 		runs:    map[string]*runLogs{},
 		active:  map[string]struct{}{},
 		broker:  broker,
@@ -93,8 +95,9 @@ func (lr *LogRouter) attach() {
 }
 
 func (lr *LogRouter) sink(ll *g.LogLine) {
-	runID := lr.runForGID(goroutineID())
-	if runID == "" {
+	gid := goroutineID()
+	runID := lr.runForGID(gid)
+	if runID == "" && !lr.gidSuppressed(gid) {
 		runID = lr.soleActiveRun()
 	}
 	if runID != "" {
@@ -110,6 +113,29 @@ func (lr *LogRouter) sink(ll *g.LogLine) {
 	if prev := lr.prevSink(); prev != nil {
 		prev(ll)
 	}
+}
+
+// SuppressGID marks the current goroutine as a non-run logger: its lines are
+// never attributed to a run, not even through the sole-active-run fallback.
+// The HTTP middleware uses this so request/access logs never pollute the
+// console of whatever run happens to be active.
+func (lr *LogRouter) SuppressGID() (restore func()) {
+	gid := goroutineID()
+	lr.mu.Lock()
+	lr.noRuns[gid] = struct{}{}
+	lr.mu.Unlock()
+	return func() {
+		lr.mu.Lock()
+		delete(lr.noRuns, gid)
+		lr.mu.Unlock()
+	}
+}
+
+func (lr *LogRouter) gidSuppressed(gid uint64) bool {
+	lr.mu.RLock()
+	defer lr.mu.RUnlock()
+	_, ok := lr.noRuns[gid]
+	return ok
 }
 
 // SetActiveRuns is called by the runner on run start/finish.

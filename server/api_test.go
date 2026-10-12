@@ -475,3 +475,39 @@ func TestSSEEventsStreamThroughMiddleware(t *testing.T) {
 		}
 	}
 }
+
+// TestLogRouterSuppressedGIDSkipsFallback guards the HTTP-noise suppression:
+// unbound engine goroutines still fall back to the sole active run, but lines
+// from suppressed goroutines (the HTTP middleware) never land in run logs.
+func TestLogRouterSuppressedGIDSkipsFallback(t *testing.T) {
+	broker := NewBroker()
+	db := openTestDB(t)
+	lr := NewLogRouter(broker, db)
+
+	logs := &runLogs{}
+	unbind := lr.bind("run-A", logs)
+	defer unbind()
+	lr.SetActiveRuns([]string{"run-A"})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		lr.sink(&g.LogLine{Level: 1, Text: "engine line\n"})
+	}()
+	<-done
+	if len(logs.lines) != 1 {
+		t.Fatalf("fallback attribution broken: %d lines", len(logs.lines))
+	}
+
+	done2 := make(chan struct{})
+	go func() {
+		defer close(done2)
+		restore := lr.SuppressGID()
+		defer restore()
+		lr.sink(&g.LogLine{Level: 1, Text: "[http] #1 GET /api/runs -> 200 (1ms)\n"})
+	}()
+	<-done2
+	if len(logs.lines) != 1 {
+		t.Fatalf("suppressed line leaked into run logs: %d lines", len(logs.lines))
+	}
+}
