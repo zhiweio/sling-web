@@ -1,8 +1,9 @@
 //go:build !dev
 
 // Package web serves the embedded React workbench in production builds.
-// web/dist is produced by `npm run build`; dist/.placeholder keeps the
-// tree compilable without a frontend toolchain.
+// web/dist is produced by the frontend build (`pnpm run build`); go:embed
+// needs at least one matching file, so CI creates dist/.placeholder before
+// compiling cmd/sling-server without a frontend build.
 package web
 
 import (
