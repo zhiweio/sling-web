@@ -12,14 +12,16 @@ import {
   Folder,
   Loader2,
   Lock,
+  Pencil,
   Plus,
   Table,
   Trash2,
   Upload,
+  X,
   XCircle,
 } from "lucide-react"
 import { api } from "@/lib/api"
-import type { ConnTypeDef, Connection } from "@/lib/types"
+import type { ConnTypeDef, Connection, ConnectionDetail } from "@/lib/types"
 import { PageHeader } from "@/features/dashboard"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -178,6 +180,7 @@ export default function Connections() {
 
       {wizardOpen && (
         <ConnWizard
+          existingNames={(conns ?? []).map((c) => c.name)}
           onClose={() => setWizardOpen(false)}
           onSaved={() => {
             setWizardOpen(false)
@@ -303,17 +306,49 @@ function ImportButton() {
 
 /* -------------------------------- Add wizard ------------------------------ */
 
-function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function ConnWizard({
+  onClose,
+  onSaved,
+  edit,
+  existingNames = [],
+}: {
+  onClose: () => void
+  onSaved: () => void
+  edit?: ConnectionDetail
+  existingNames?: string[]
+}) {
   const { t } = useTranslation()
-  const [step, setStep] = useState(0)
-  const [typeDef, setTypeDef] = useState<ConnTypeDef | null>(null)
-  const [name, setName] = useState("")
-  const [props, setProps] = useState<Record<string, string>>({})
+  // the vault stores local filesystem connections as type "file"; the catalog calls them "local"
+  const editTypeKey = edit ? (edit.type === "file" ? "local" : edit.type) : null
+  const [step, setStep] = useState(edit ? 1 : 0)
+  const [typeKey, setTypeKey] = useState<string | null>(editTypeKey)
+  const [name, setName] = useState(edit?.name ?? "")
+  // stored non-secret props; masked values are dropped so secrets never leave the vault
+  const [props, setProps] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(edit?.props ?? {})
+        .filter(([, v]) => v != null && v !== "******")
+        .map(([k, v]) => [k, String(v)]),
+    ),
+  )
   const [testResult, setTestResult] = useState<{ success: boolean; error?: string; ms: number } | null>(null)
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const { data: types } = useQuery({ queryKey: ["conn-types"], queryFn: api.connTypes })
+  const typeDef = useMemo(() => (typeKey ? types?.find((ty) => ty.type === typeKey) ?? null : null), [types, typeKey])
+
+  // fill catalog defaults for fields the stored connection never persisted
+  useEffect(() => {
+    if (!edit || !typeDef) return
+    setProps((cur) => {
+      const next = { ...cur }
+      for (const p of typeDef.properties) {
+        if (p.name !== "name" && !p.secret && next[p.name] == null && p.default != null) next[p.name] = String(p.default)
+      }
+      return next
+    })
+  }, [edit, typeDef])
 
   const grouped = useMemo(() => {
     const g: Record<string, ConnTypeDef[]> = { database: [], file: [], api: [] }
@@ -327,6 +362,10 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
     const req = typeDef.required ?? []
     return req.every((r) => (props[r] ?? "").trim() !== "")
   }, [typeDef, props])
+
+  // live duplicate check: block test/save before any effort is wasted; the
+  // server rejects duplicates independently (defense in depth)
+  const nameTaken = !edit && name.trim() !== "" && existingNames.includes(name.trim())
 
   async function doTest() {
     setTesting(true)
@@ -343,9 +382,19 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
   }
 
   async function doSave() {
+    if (!typeDef) return
     setSaving(true)
     try {
-      await api.createConn({ name, type: typeDef!.type, props })
+      const input = { name, type: typeDef.type, props }
+      if (edit) await api.updateConn(edit.name, input)
+      else await api.createConn(input)
+      // refresh the stored record's test status so the card reflects the
+      // saved config (best-effort; the save itself already succeeded)
+      try {
+        await api.testConn({ name })
+      } catch {
+        /* ignored */
+      }
       onSaved()
     } catch (e) {
       toast.error((e as Error).message)
@@ -358,8 +407,10 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{t("connections.addTitle")}</DialogTitle>
-          <DialogDescription className="sr-only">{t("connections.addTitle")}</DialogDescription>
+          <DialogTitle>{edit ? t("connections.editTitle") : t("connections.addTitle")}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {edit ? t("connections.editTitle") : t("connections.addTitle")}
+          </DialogDescription>
         </DialogHeader>
 
         {/* Step indicator */}
@@ -393,8 +444,16 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
                       <button
                         key={ty.type}
                         onClick={() => {
-                          setTypeDef(ty)
-                          setProps(Object.fromEntries((ty.properties ?? []).filter((p) => !p.secret && typeof p.default === "string" && p.name !== "name").map((p) => [p.name, String(p.default)])))
+                          setTypeKey(ty.type)
+                          // prefill every non-secret default so required fields with
+                          // defaults (e.g. Oracle port 1521) never block the test button
+                          setProps(
+                            Object.fromEntries(
+                              (ty.properties ?? [])
+                                .filter((p) => p.name !== "name" && !p.secret && p.default != null)
+                                .map((p) => [p.name, String(p.default)]),
+                            ),
+                          )
                           setStep(1)
                         }}
                         className="flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm hover:border-primary hover:bg-primary/5"
@@ -410,59 +469,60 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
           </div>
         )}
 
-        {step === 1 && typeDef && (
+        {step === 1 && (
           <div className="space-y-4">
-            <div>
-              <Label htmlFor="conn-name">{t("connections.nameLabel")} *</Label>
-              <Input
-                id="conn-name"
-                value={name}
-                onChange={(e) => setName(e.target.value.toUpperCase().replace(/\s+/g, "_"))}
-                placeholder={(typeDef.properties?.find((p) => p.name === "name")?.examples ?? ["MY_CONN"])[0]}
-                className="mt-1.5"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">{t("connections.nameHelper")}</p>
+            <div className="scrollbar-thin max-h-[56vh] space-y-4 overflow-y-auto pr-1">
+              {!typeDef ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <Label htmlFor="conn-name">{t("connections.nameLabel")} *</Label>
+                    <Input
+                      id="conn-name"
+                      value={name}
+                      readOnly={!!edit}
+                      onChange={(e) => setName(e.target.value.toUpperCase().replace(/\s+/g, "_"))}
+                      placeholder={(typeDef.properties?.find((p) => p.name === "name")?.examples ?? ["MY_CONN"])[0]}
+                      className="mt-1.5"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {edit ? t("connections.nameLocked") : t("connections.nameHelper")}
+                    </p>
+                    {nameTaken && (
+                      <p className="mt-1 text-xs text-destructive" role="alert">
+                        {t("connections.nameTaken", { name: name.trim() })}
+                      </p>
+                    )}
+                  </div>
+
+                  {(typeDef.properties ?? [])
+                    .filter((p) => p.name !== "name")
+                    .map((p) => (
+                      <PropField
+                        key={p.name}
+                        def={p}
+                        value={props[p.name] ?? ""}
+                        onChange={(v) => setProps((s) => ({ ...s, [p.name]: v }))}
+                        keepSecret={!!edit}
+                      />
+                    ))}
+
+                  {testResult && <TestResultBox result={testResult} onDismiss={() => setTestResult(null)} />}
+                </>
+              )}
             </div>
 
-            {(typeDef.properties ?? [])
-              .filter((p) => p.name !== "name")
-              .map((p) => (
-                <PropField key={p.name} def={p} value={props[p.name] ?? ""} onChange={(v) => setProps((s) => ({ ...s, [p.name]: v }))} />
-              ))}
-
-            {testResult && (
-              <div
-                className={cn(
-                  "flex items-start gap-3 rounded-xl border p-4",
-                  testResult.success ? "border-emerald-500/30 bg-emerald-500/5" : "border-destructive/30 bg-destructive/5",
-                )}
-              >
-                {testResult.success ? (
-                  <CheckCircle2 className="size-5 shrink-0 text-emerald-500" />
-                ) : (
-                  <XCircle className="size-5 shrink-0 text-destructive" />
-                )}
-                <div className="min-w-0 text-sm">
-                  <div className="font-semibold">
-                    {testResult.success ? t("connections.testedOk") : t("connections.testedFail")} · {testResult.ms}ms
-                  </div>
-                  {!testResult.success && testResult.error && (
-                    <div className="mt-1 break-all text-xs text-muted-foreground">{testResult.error}</div>
-                  )}
-                </div>
-              </div>
-            )}
-
             <div className="flex items-center justify-between pt-2">
-              <Button variant="outline" onClick={() => setStep(0)}>
-                {t("app.actions.prev")}
-              </Button>
+              {!edit && (
+                <Button variant="outline" onClick={() => setStep(0)}>
+                  {t("app.actions.prev")}
+                </Button>
+              )}
               <div className="flex gap-2">
-                <Button
-                  disabled={!name.trim() || !filledRequired}
-                  onClick={doTest}
-                  variant="secondary"
-                >
+                <Button disabled={!name.trim() || nameTaken || !filledRequired || !typeDef} onClick={doTest} variant="secondary">
                   {testing ? <Loader2 className="size-4 animate-spin" /> : null}
                   {t("app.actions.test")}
                 </Button>
@@ -474,33 +534,16 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
           </div>
         )}
 
-        {step === 2 && typeDef && (
+        {step === 2 && (
           <div className="space-y-4">
-            {testResult?.success ? (
-              <div className="flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
-                <CheckCircle2 className="size-6 shrink-0 text-emerald-500" />
-                <div>
-                  <div className="text-sm font-semibold">{t("connections.testedOk")} · {testResult.ms}ms</div>
-                  <div className="text-xs text-muted-foreground">{name} ({typeDef.title})</div>
-                </div>
-              </div>
-            ) : (
-              testResult && (
-                <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
-                  <XCircle className="size-6 shrink-0 text-destructive" />
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold">{t("connections.testedFail")}</div>
-                    <div className="mt-1 break-all text-xs text-muted-foreground">{testResult.error}</div>
-                  </div>
-                </div>
-              )
-            )}
+            {testResult && <TestResultBox result={testResult} onDismiss={() => setTestResult(null)} />}
             <div className="flex items-center justify-between">
               <Button variant="outline" onClick={() => setStep(1)}>
                 {t("app.actions.prev")}
               </Button>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={doTest} disabled={testing}>
+                <Button variant="secondary" onClick={doTest} disabled={testing || !name.trim() || !filledRequired}>
+                  {testing ? <Loader2 className="size-4 animate-spin" /> : null}
                   {t("app.actions.test")}
                 </Button>
                 <Button onClick={doSave} disabled={saving || !testResult?.success}>
@@ -516,15 +559,61 @@ function ConnWizard({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
   )
 }
 
+/* Dismissible test outcome; long errors scroll instead of stretching the dialog */
+function TestResultBox({
+  result,
+  onDismiss,
+}: {
+  result: { success: boolean; error?: string; ms: number }
+  onDismiss: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 rounded-xl border p-4",
+        result.success ? "border-emerald-500/30 bg-emerald-500/5" : "border-destructive/30 bg-destructive/5",
+      )}
+    >
+      {result.success ? (
+        <CheckCircle2 className="size-5 shrink-0 text-emerald-500" />
+      ) : (
+        <XCircle className="size-5 shrink-0 text-destructive" />
+      )}
+      <div className="min-w-0 flex-1 text-sm">
+        <div className="font-semibold">
+          {result.success ? t("connections.testedOk") : t("connections.testedFail")} · {result.ms}ms
+        </div>
+        {!result.success && result.error && (
+          <div className="scrollbar-thin mt-1 max-h-24 overflow-y-auto break-all text-xs text-muted-foreground">
+            {result.error}
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label={t("connections.dismissAlert")}
+        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <X className="size-4" />
+      </button>
+    </div>
+  )
+}
+
 function PropField({
   def,
   value,
   onChange,
+  keepSecret,
 }: {
   def: { name: string; type: string; title?: string; description?: string; examples?: string[]; options?: string[]; secret?: boolean; required?: boolean }
   value: string
   onChange: (v: string) => void
+  keepSecret?: boolean
 }) {
+  const { t } = useTranslation()
   const isSecret = def.secret
   return (
     <div>
@@ -553,7 +642,7 @@ function PropField({
           type={isSecret ? "password" : def.type === "integer" ? "number" : "text"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={def.examples?.[0] ?? ""}
+          placeholder={isSecret && keepSecret ? t("connections.keepSecret") : def.examples?.[0] ?? ""}
           autoComplete="off"
           className="mt-1.5"
         />
@@ -574,6 +663,7 @@ function ConnDetail({ name }: { name: string }) {
     queryFn: () => api.getConn(name),
   })
   const [testing, setTesting] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   const { data: discover } = useQuery({
     queryKey: ["conn-discover", name],
@@ -596,8 +686,9 @@ function ConnDetail({ name }: { name: string }) {
   }
 
   return (
-    <Dialog open onOpenChange={(v) => !v && nav("/connections")}>
-      <DialogContent className="max-w-3xl">
+    <>
+      <Dialog open onOpenChange={(v) => !v && nav("/connections")}>
+        <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {detail?.name}
@@ -617,6 +708,10 @@ function ConnDetail({ name }: { name: string }) {
           <Button size="sm" variant="secondary" onClick={test} disabled={testing}>
             {testing ? <Loader2 className="size-4 animate-spin" /> : null}
             {t("app.actions.test")}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setEditing(true)} disabled={!detail}>
+            <Pencil className="size-3.5" />
+            {t("app.actions.edit")}
           </Button>
         </div>
 
@@ -673,8 +768,23 @@ function ConnDetail({ name }: { name: string }) {
             </div>
           </TabsContent>
         </Tabs>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      {editing && detail && (
+        <ConnWizard
+          edit={detail}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false)
+            qc.invalidateQueries({ queryKey: ["conns"] })
+            qc.invalidateQueries({ queryKey: ["conn", name] })
+            qc.invalidateQueries({ queryKey: ["conn-discover", name] })
+            toast.success(t("common.saved"))
+          }}
+        />
+      )}
+    </>
   )
 }
 
