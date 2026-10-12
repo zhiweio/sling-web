@@ -318,3 +318,102 @@ func TestAPISettingsWhitelist(t *testing.T) {
 		t.Fatalf("settings get: %d %s", resp, body)
 	}
 }
+
+func TestConnsTestPropsDoesNotClobberStoredRecord(t *testing.T) {
+	app := newTestApp(t)
+
+	_, err := app.Conns.Upsert(UpsertInput{
+		Name: "ORA1",
+		Type: "oracle",
+		Props: map[string]any{"host": "127.0.0.1", "port": "1", "username": "u", "password": "p"},
+	})
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	// wizard edit flow: testing unsaved props under an existing name must not
+	// touch the stored record (dial to 127.0.0.1:1 is refused instantly)
+	if _, err = app.Conns.TestProps(UpsertInput{
+		Name:  "ORA1",
+		Type:  "oracle",
+		Props: map[string]any{"host": "127.0.0.1", "port": "1", "username": "u"},
+	}); err != nil {
+		t.Fatalf("test props: %v", err)
+	}
+
+	rec, err := app.Conns.Get("ORA1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	props := rec.Props()
+	if props["host"] != "127.0.0.1" || props["username"] != "u" {
+		t.Fatalf("stored props clobbered by TestProps: %+v", props)
+	}
+	if len(rec.SecretFieldList()) == 0 {
+		t.Fatal("secret field list clobbered by TestProps")
+	}
+
+	// wizard create flow: testing a brand-new name must not create a record
+	if _, err = app.Conns.TestProps(UpsertInput{
+		Name:  "ORA2",
+		Type:  "oracle",
+		Props: map[string]any{"host": "127.0.0.1", "port": "1", "username": "u"},
+	}); err != nil {
+		t.Fatalf("test props (new name): %v", err)
+	}
+	if _, err = app.Conns.Get("ORA2"); err == nil {
+		t.Fatal("TestProps must not create a phantom connection record")
+	}
+}
+
+func TestConnsDuplicateNameAndRenameRejected(t *testing.T) {
+	app := newTestApp(t)
+
+	if _, err := app.Conns.Create(UpsertInput{
+		Name: "ORA1", Type: "oracle",
+		Props: map[string]any{"host": "h1", "port": "1521", "username": "u", "password": "p"},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// duplicate create (any case) must be rejected, not overwrite
+	if _, err := app.Conns.Create(UpsertInput{
+		Name: "ora1", Type: "oracle",
+		Props: map[string]any{"host": "h2", "port": "1521", "username": "x"},
+	}); err == nil {
+		t.Fatal("duplicate create must be rejected")
+	}
+	rec, err := app.Conns.Get("ORA1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Props()["host"] != "h1" || rec.Props()["username"] != "u" {
+		t.Fatalf("existing connection was overwritten: %+v", rec.Props())
+	}
+
+	// updating with another connection's name must not clobber the target
+	if _, err := app.Conns.Create(UpsertInput{
+		Name: "ORA2", Type: "oracle",
+		Props: map[string]any{"host": "h9", "port": "1521", "username": "z"},
+	}); err != nil {
+		t.Fatalf("create 2: %v", err)
+	}
+	if _, err := app.Conns.Update("ORA1", UpsertInput{
+		Name: "ORA2", Type: "oracle",
+		Props: map[string]any{"host": "h1", "port": "1521", "username": "u"},
+	}); err == nil {
+		t.Fatal("renaming onto an existing name must be rejected")
+	}
+	rec2, err := app.Conns.Get("ORA2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec2.Props()["host"] != "h9" || rec2.Props()["username"] != "z" {
+		t.Fatalf("ORA2 was clobbered via rename: %+v", rec2.Props())
+	}
+
+	// unknown target fails
+	if _, err := app.Conns.Update("NOPE", UpsertInput{Type: "oracle"}); err == nil {
+		t.Fatal("updating an unknown connection must be rejected")
+	}
+}

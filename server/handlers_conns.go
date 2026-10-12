@@ -73,7 +73,7 @@ func (a *App) handleConnsCreate(w http.ResponseWriter, r *http.Request) {
 		apiErr(w, err)
 		return
 	}
-	rec, err := a.Conns.Upsert(in)
+	rec, err := a.Conns.Create(in)
 	if err != nil {
 		apiErr(w, err)
 		return
@@ -82,16 +82,12 @@ func (a *App) handleConnsCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleConnsUpdate(w http.ResponseWriter, r *http.Request) {
-	name := pathVar(r, "name")
 	var in UpsertInput
 	if err := decodeBody(r, &in); err != nil {
 		apiErr(w, err)
 		return
 	}
-	if in.Name == "" {
-		in.Name = name
-	}
-	rec, err := a.Conns.Upsert(in)
+	rec, err := a.Conns.Update(pathVar(r, "name"), in)
 	if err != nil {
 		apiErr(w, err)
 		return

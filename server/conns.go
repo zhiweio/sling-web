@@ -168,7 +168,8 @@ type ConnService struct {
 	vault  *Vault
 	broker *Broker
 
-	mu sync.Mutex // serializes materialization
+	mu      sync.Mutex // serializes materialization
+	writeMu sync.Mutex // serializes Create/Update lookups + writes
 }
 
 func NewConnService(db *DB, vault *Vault, broker *Broker) *ConnService {
@@ -218,6 +219,47 @@ func normalizeConnType(t string) string {
 		return "file"
 	}
 	return strings.TrimSpace(t)
+}
+
+// Create adds a new connection. A duplicate name is rejected instead of
+// silently overwriting the existing connection's props and credentials.
+func (cs *ConnService) Create(in UpsertInput) (*ConnectionRecord, error) {
+	cs.writeMu.Lock()
+	defer cs.writeMu.Unlock()
+
+	name := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(in.Name), " ", "_"))
+	if name == "" {
+		return nil, g.Error("connection name is required")
+	}
+	if _, err := cs.Get(name); err == nil {
+		return nil, g.Error("connection %s already exists", name)
+	}
+	return cs.Upsert(in)
+}
+
+// Update modifies an existing connection. The name is immutable (jobs
+// reference connections by name) and so is the type.
+func (cs *ConnService) Update(name string, in UpsertInput) (*ConnectionRecord, error) {
+	cs.writeMu.Lock()
+	defer cs.writeMu.Unlock()
+
+	name = strings.ToUpper(strings.TrimSpace(name))
+	if in.Name != "" {
+		if inName := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(in.Name), " ", "_")); inName != name {
+			return nil, g.Error("invalid rename: connection %s cannot be renamed (jobs reference it by name)", name)
+		}
+	}
+	rec, err := cs.Get(name)
+	if err != nil {
+		return nil, g.Error(err, "connection not found: %s", name)
+	}
+	if t := normalizeConnType(in.Type); t != "" && t != rec.Type {
+		return nil, g.Error("invalid type change for connection %s: %s to %s", name, rec.Type, t)
+	}
+	if in.Type == "" {
+		in.Type = rec.Type
+	}
+	return cs.Upsert(in)
 }
 
 func (cs *ConnService) Upsert(in UpsertInput) (*ConnectionRecord, error) {
@@ -448,7 +490,7 @@ type TestResult struct {
 	Ms      int64  `json:"ms"`
 }
 
-// Test tests a stored connection by name.
+// Test tests a stored connection by name and persists the outcome.
 func (cs *ConnService) Test(name string) (*TestResult, error) {
 	rec, err := cs.Get(name)
 	if err != nil {
@@ -458,10 +500,12 @@ func (cs *ConnService) Test(name string) (*TestResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return cs.testRecord(rec, props)
+	return cs.testRecord(rec, props, true)
 }
 
-// TestProps tests an unsaved connection (wizard live feedback).
+// TestProps tests unsaved form values (wizard live feedback). It must not
+// persist: rec is a name/type stub, and saving it would clobber the stored
+// record's props and secret references with empty values.
 func (cs *ConnService) TestProps(in UpsertInput) (*TestResult, error) {
 	name := strings.ToUpper(strings.TrimSpace(in.Name))
 	props := map[string]any{}
@@ -479,10 +523,10 @@ func (cs *ConnService) TestProps(in UpsertInput) (*TestResult, error) {
 		props[k] = v
 	}
 	rec := &ConnectionRecord{Name: name, Type: normalizeConnType(in.Type)}
-	return cs.testRecord(rec, props)
+	return cs.testRecord(rec, props, false)
 }
 
-func (cs *ConnService) testRecord(rec *ConnectionRecord, props map[string]any) (*TestResult, error) {
+func (cs *ConnService) testRecord(rec *ConnectionRecord, props map[string]any, persist bool) (*TestResult, error) {
 	dbType, ok := dbio.ValidateType(strings.ToLower(rec.Type))
 	if !ok {
 		return nil, g.Error("unknown connection type: %s", rec.Type)
@@ -505,7 +549,9 @@ func (cs *ConnService) testRecord(rec *ConnectionRecord, props map[string]any) (
 	rec.LastTestAt = timePtr(time.Now())
 	rec.LastTestMs = ms
 	rec.LastTestErr = res.Error
-	cs.db.Save(rec)
+	if persist {
+		cs.db.Save(rec)
+	}
 	return res, nil
 }
 
