@@ -361,22 +361,6 @@ func TestSqlServer(t *testing.T) {
 	if g.AssertNoError(t, err) {
 		DBTest(t, db, conn)
 	}
-
-	return
-
-	db = DBs["azuresql"]
-	conn, err = NewConn(db.URL)
-	g.AssertNoError(t, err)
-
-	err = conn.Connect()
-	g.AssertNoError(t, err)
-
-	db = DBs["azuredwh"]
-	conn, err = NewConn(db.URL)
-	g.AssertNoError(t, err)
-
-	err = conn.Connect()
-	g.AssertNoError(t, err)
 }
 
 func TestBigQuery(t *testing.T) {

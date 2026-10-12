@@ -234,10 +234,9 @@ func (da *DataAnalyzer) AnalyzeColumns(sampleSize int, includeViews bool) (err e
 			isText := c.IsString() && c.Type != iop.JsonType
 			// isNumber := strings.Contains(t, "int") || strings.Contains(t, "double")
 			isNumber := c.IsInteger()
-			return isText || isNumber
 			// TODO: should be string or number?
 			// skip date column for now
-			return !(strings.Contains(c.Name, "time") || strings.Contains(c.Name, "date"))
+			return isText || isNumber
 		})
 
 		g.Debug("getting stats for %d columns", len(colsAll))
