@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,6 +33,9 @@ type RunHandle struct {
 	logs    *runLogs
 	started time.Time
 	streamCap int
+
+	// fingerprint dedups ad-hoc runs of an identical spec (empty for job runs).
+	fingerprint string
 
 	status  atomic.Value // string (sling.ExecStatus)
 
@@ -70,26 +74,32 @@ func newRunID() string {
 }
 
 // StartTask launches a prepared single-task run on a new goroutine and
-// returns immediately. The returned handle is also registered.
-func (r *Runner) StartTask(job *Job, trigger string, attempt int, cfg *sling.Config) *RunHandle {
+// returns immediately. The returned handle is also registered. A non-empty
+// fp (ad-hoc runs) rejects duplicates of an identical running spec by
+// returning nil.
+func (r *Runner) StartTask(job *Job, trigger string, attempt int, cfg *sling.Config, fp string) *RunHandle {
 	h := &RunHandle{
-		ID:        newRunID(),
-		Trigger:   trigger,
-		Attempt:   attempt,
-		Type:      "task",
-		cfg:       cfg,
-		logs:      &runLogs{},
-		started:   time.Now(),
-		streamCap: r.streamCap(),
-		done:      make(chan struct{}),
-		db:        r.db, broker: r.broker, router: r.router,
+		ID:          newRunID(),
+		Trigger:     trigger,
+		Attempt:     attempt,
+		Type:        "task",
+		cfg:         cfg,
+		logs:        &runLogs{},
+		started:     time.Now(),
+		streamCap:   r.streamCap(),
+		fingerprint: fp,
+		done:        make(chan struct{}),
+		db:          r.db, broker: r.broker, router: r.router,
 	}
 	if job != nil {
 		h.JobID, h.JobName = job.ID, job.Name
 		h.Spec = job.Spec()
 	}
 	h.notify = r.notify
-	r.register(h)
+	h.bindContext()
+	if !r.register(h) {
+		return nil
+	}
 	go func() {
 		defer r.syncActive()
 		h.run()
@@ -97,26 +107,31 @@ func (r *Runner) StartTask(job *Job, trigger string, attempt int, cfg *sling.Con
 	return h
 }
 
-// StartReplication launches a compiled replication run.
-func (r *Runner) StartReplication(job *Job, trigger string, attempt int, repl *sling.ReplicationConfig, spec JobSpec) *RunHandle {
+// StartReplication launches a compiled replication run. See StartTask for
+// the fp semantics.
+func (r *Runner) StartReplication(job *Job, trigger string, attempt int, repl *sling.ReplicationConfig, spec JobSpec, fp string) *RunHandle {
 	h := &RunHandle{
-		ID:        newRunID(),
-		Trigger:   trigger,
-		Attempt:   attempt,
-		Type:      "replication",
-		repl:      repl,
-		Spec:      spec,
-		logs:      &runLogs{},
-		started:   time.Now(),
-		streamCap: r.streamCap(),
-		done:      make(chan struct{}),
-		db:        r.db, broker: r.broker, router: r.router,
+		ID:          newRunID(),
+		Trigger:     trigger,
+		Attempt:     attempt,
+		Type:        "replication",
+		repl:        repl,
+		Spec:        spec,
+		logs:        &runLogs{},
+		started:     time.Now(),
+		streamCap:   r.streamCap(),
+		fingerprint: fp,
+		done:        make(chan struct{}),
+		db:          r.db, broker: r.broker, router: r.router,
 	}
 	if job != nil {
 		h.JobID, h.JobName = job.ID, job.Name
 	}
 	h.notify = r.notify
-	r.register(h)
+	h.bindContext()
+	if !r.register(h) {
+		return nil
+	}
 	go func() {
 		defer r.syncActive()
 		h.run()
@@ -125,17 +140,68 @@ func (r *Runner) StartReplication(job *Job, trigger string, attempt int, repl *s
 }
 
 func (r *Runner) streamCap() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if r.StreamConcurrency > 0 {
 		return r.StreamConcurrency
 	}
 	return 1
 }
 
-func (r *Runner) register(h *RunHandle) {
+// SetStreamConcurrency applies the runtime setting (clamped to >= 1).
+func (r *Runner) SetStreamConcurrency(n int) {
+	if n < 1 {
+		n = 1
+	}
 	r.mu.Lock()
+	r.StreamConcurrency = n
+	r.mu.Unlock()
+}
+
+// register adds the handle, rejecting an identical-spec duplicate (ad-hoc
+// fingerprint). Returns false when rejected. Also prunes finished handles
+// so the map does not grow without bound.
+func (r *Runner) register(h *RunHandle) bool {
+	r.mu.Lock()
+	if h.fingerprint != "" {
+		for _, other := range r.runs {
+			if other.fingerprint == h.fingerprint && !other.IsFinished() {
+				r.mu.Unlock()
+				return false
+			}
+		}
+	}
 	r.runs[h.ID] = h
+	r.pruneFinishedLocked()
 	r.mu.Unlock()
 	r.syncActive()
+	return true
+}
+
+// keepFinishedRuns caps how many finished handles are retained for API
+// reads (run detail falls back to the DB row when pruned).
+const keepFinishedRuns = 64
+
+// pruneFinishedLocked drops the oldest finished handles beyond the cap.
+// Active handles are never pruned. Callers must hold r.mu.
+func (r *Runner) pruneFinishedLocked() {
+	type aged struct {
+		id      string
+		started time.Time
+	}
+	finished := make([]aged, 0, 8)
+	for id, h := range r.runs {
+		if h.IsFinished() {
+			finished = append(finished, aged{id, h.started})
+		}
+	}
+	if len(finished) <= keepFinishedRuns {
+		return
+	}
+	sort.Slice(finished, func(i, j int) bool { return finished[i].started.Before(finished[j].started) })
+	for _, a := range finished[:len(finished)-keepFinishedRuns] {
+		delete(r.runs, a.id)
+	}
 }
 
 // syncActive pushes the active run set to the log router (single-run
@@ -170,20 +236,51 @@ func (r *Runner) Active() (hs []*RunHandle) {
 	return hs
 }
 
+// bindContext wires the execution context before the handle is registered,
+// so Cancel can never race a nil cancel func.
+func (h *RunHandle) bindContext() {
+	h.gctx = g.NewContext(context.Background())
+	h.cancel = func() { h.gctx.Cancel() }
+}
+
+// requestCancel is nil-safe: handles are always bound before registration,
+// but stay defensive for any handle constructed outside the start paths.
+func (h *RunHandle) requestCancel() {
+	if h.cancel != nil {
+		h.cancel()
+	}
+}
+
+// HasActiveFingerprint reports whether an unfinished run holds the spec
+// fingerprint (ad-hoc duplicate pre-check; register enforces it atomically).
+func (r *Runner) HasActiveFingerprint(fp string) bool {
+	if fp == "" {
+		return false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, h := range r.runs {
+		if h.fingerprint == fp && !h.IsFinished() {
+			return true
+		}
+	}
+	return false
+}
+
 // Cancel terminates a run. Returns false when unknown/finished.
 func (r *Runner) Cancel(runID string) bool {
 	h := r.Get(runID)
 	if h == nil || h.IsFinished() {
 		return false
 	}
-	h.cancel()
+	h.requestCancel()
 	return true
 }
 
 // CancelAll cancels every active run (graceful shutdown path).
 func (r *Runner) CancelAll() {
 	for _, h := range r.Active() {
-		h.cancel()
+		h.requestCancel()
 	}
 }
 
@@ -305,9 +402,6 @@ func (h *RunHandle) run() {
 
 	defer close(h.done)
 
-	gctx := g.NewContext(context.Background())
-	h.gctx = gctx
-	h.cancel = func() { gctx.Cancel() }
 	h.streams = map[string]*StreamStatus{}
 
 	h.setStatus(sling.ExecStatusRunning)
@@ -323,7 +417,7 @@ func (h *RunHandle) run() {
 			select {
 			case <-stopTicks:
 				return
-			case <-gctx.Ctx.Done():
+			case <-h.gctx.Ctx.Done():
 				return
 			case <-sseTick.C:
 				h.publish()

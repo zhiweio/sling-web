@@ -141,6 +141,10 @@ export interface Job {
   last_run_at?: string | null
   consecutive_failures?: number
   auto_paused?: boolean
+  /** live run decoration from the server: run id once started */
+  active_run_id?: string
+  /** "queued" or "running" while an instance is in flight */
+  active_run_state?: "queued" | "running"
   version?: number
   is_template?: boolean
   created_at: string

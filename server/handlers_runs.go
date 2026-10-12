@@ -3,6 +3,9 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -10,8 +13,19 @@ import (
 	"github.com/slingdata-io/sling-cli/core/sling"
 )
 
+// specFingerprint hashes the serialized spec so identical ad-hoc specs can
+// be detected across runs.
+func specFingerprint(spec JobSpec) string {
+	b, err := json.Marshal(spec)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:16])
+}
+
 // handleRunsCreate starts an ad-hoc run from a raw spec (wizard "run now"
-// without saving).
+// without saving). An identical spec already in flight is rejected.
 func (a *App) handleRunsCreate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Spec JobSpec `json:"spec"`
@@ -24,6 +38,11 @@ func (a *App) handleRunsCreate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "spec.streams is required")
 		return
 	}
+	fp := specFingerprint(in.Spec)
+	if a.Runner.HasActiveFingerprint(fp) {
+		writeErr(w, 409, "an identical run is already in progress")
+		return
+	}
 
 	if in.Spec.IsSingleTask() {
 		cfg, err := in.Spec.CompileTask()
@@ -31,7 +50,11 @@ func (a *App) handleRunsCreate(w http.ResponseWriter, r *http.Request) {
 			apiErr(w, err)
 			return
 		}
-		h := a.Runner.StartTask(nil, "api", 1, cfg)
+		h := a.Runner.StartTask(nil, "api", 1, cfg, fp)
+		if h == nil {
+			writeErr(w, 409, "an identical run is already in progress")
+			return
+		}
 		writeJSON(w, 202, h.Snapshot())
 		return
 	}
@@ -41,7 +64,11 @@ func (a *App) handleRunsCreate(w http.ResponseWriter, r *http.Request) {
 		apiErr(w, err)
 		return
 	}
-	h := a.Runner.StartReplication(nil, "api", 1, repl, in.Spec)
+	h := a.Runner.StartReplication(nil, "api", 1, repl, in.Spec, fp)
+	if h == nil {
+		writeErr(w, 409, "an identical run is already in progress")
+		return
+	}
 	writeJSON(w, 202, h.Snapshot())
 }
 

@@ -29,7 +29,7 @@ const BASE = "/api"
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(BASE + path, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...init?.headers },
   })
   const text = await resp.text()
   const body = text ? JSON.parse(text) : {}

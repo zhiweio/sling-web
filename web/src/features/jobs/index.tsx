@@ -20,13 +20,14 @@ import {
   Plus,
   Trash2,
 } from "lucide-react"
-import { api } from "@/lib/api"
+import { api, ApiError } from "@/lib/api"
 import type { Job } from "@/lib/types"
 import { PageHeader } from "@/features/dashboard"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyState } from "@/components/empty-state"
+import { StatusBadge } from "@/components/status-badge"
 import { ListPagination, ListToolbar, NoMatchState } from "@/components/list-toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AnalysisDialog } from "@/features/jobs/analysis-dialog"
@@ -244,9 +245,22 @@ function JobRow({ job, onDelete, onAnalyze }: { job: Job; onDelete: () => void; 
     onSuccess: () => {
       toast.success(t("jobs.runTriggered", { name: job.name }))
       qc.invalidateQueries({ queryKey: ["runs"] })
+      // refresh the busy decoration so the button flips to disabled at once
+      qc.invalidateQueries({ queryKey: ["jobs"] })
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409) {
+        toast.warning(t("jobs.alreadyRunningToast", { name: job.name }))
+        qc.invalidateQueries({ queryKey: ["jobs"] })
+      } else {
+        toast.error(e.message)
+      }
+    },
   })
+
+  // an instance is queued or running server-side: block duplicate triggers
+  const activeRunState = job.active_run_state
+  const busy = activeRunState != null
 
   const toggleSchedule = useMutation({
     mutationFn: () => api.setSchedule(job.id, { enabled: !job.schedule_enabled }),
@@ -285,6 +299,22 @@ function JobRow({ job, onDelete, onAnalyze }: { job: Job; onDelete: () => void; 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-semibold">{job.name}</span>
+          {busy &&
+            (job.active_run_id ? (
+              <button
+                type="button"
+                className="rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  nav(`/runs/${job.active_run_id}`)
+                }}
+                title={t("jobs.alreadyRunning")}
+              >
+                <StatusBadge status={activeRunState} />
+              </button>
+            ) : (
+              <StatusBadge status={activeRunState} />
+            ))}
           {job.auto_paused ? (
             <Badge variant="destructive" className="gap-1 text-[10px]">
               <AlarmClock className="size-3" /> {t("jobs.paused")}
@@ -326,7 +356,12 @@ function JobRow({ job, onDelete, onAnalyze }: { job: Job; onDelete: () => void; 
       </div>
 
       <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
-        <Button size="sm" onClick={() => run.mutate()} disabled={run.isPending} title={t("app.actions.run")}>
+        <Button
+          size="sm"
+          onClick={() => run.mutate()}
+          disabled={run.isPending || busy}
+          title={busy ? t("jobs.alreadyRunning") : t("app.actions.run")}
+        >
           {run.isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
         </Button>
         {job.schedule_enabled && (

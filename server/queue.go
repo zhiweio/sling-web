@@ -1,6 +1,7 @@
 // queue.go is the execution orchestrator: a FIFO queue with a worker pool,
-// job-level concurrency policy, retry with backoff, consecutive-failure
-// auto-pause, and completion side effects (notifications, job bookkeeping).
+// per-job single-instance reservation at enqueue time, retry with backoff,
+// consecutive-failure auto-pause, and completion side effects (notifications,
+// job bookkeeping).
 package server
 
 import (
@@ -33,9 +34,10 @@ type Executor struct {
 	stopped bool
 	workers int
 
-	// activeMu guards activeJobs for the skip/queue concurrency policy.
-	activeMu   sync.Mutex
-	activeJobs map[string]bool
+	// mu guards inflight: the per-job single-instance reservation, held
+	// from enqueue until the run (including retries) finishes.
+	mu       sync.Mutex
+	inflight map[string]bool
 }
 
 func NewExecutor(db *DB, runner *Runner, broker *Broker, notify *Notifier, concurrency int) *Executor {
@@ -50,7 +52,7 @@ func NewExecutor(db *DB, runner *Runner, broker *Broker, notify *Notifier, concu
 		queue:      make(chan runRequest, 1000),
 		stopCh:     make(chan struct{}),
 		workers:    concurrency,
-		activeJobs: map[string]bool{},
+		inflight:   map[string]bool{},
 	}
 	return e
 }
@@ -63,24 +65,118 @@ func (e *Executor) Start() {
 }
 
 // Stop drains: no new picks; running tasks are cancelled by the caller.
+// Anything still queued gets a skipped run row so it leaves a trace.
 func (e *Executor) Stop() {
-	e.activeMu.Lock()
+	e.mu.Lock()
 	if e.stopped {
-		e.activeMu.Unlock()
+		e.mu.Unlock()
 		return
 	}
 	e.stopped = true
-	e.activeMu.Unlock()
+	e.mu.Unlock()
 	close(e.stopCh)
+	e.drain()
 }
 
-// Enqueue queues a job run. Returns false when the queue is full.
-func (e *Executor) Enqueue(job *Job, trigger string) bool {
+// drain empties the queue after shutdown, releasing reservations and
+// recording what never started.
+func (e *Executor) drain() {
+	for {
+		select {
+		case req := <-e.queue:
+			e.mu.Lock()
+			delete(e.inflight, req.Job.ID)
+			e.mu.Unlock()
+			e.recordSkipped(req.Job, req.Trigger, "server shutting down before run started")
+		default:
+			return
+		}
+	}
+}
+
+// EnqueueResult explains why an Enqueue attempt was refused.
+type EnqueueResult int
+
+const (
+	EnqueueOK EnqueueResult = iota
+	EnqueueRejectedRunning  // an instance is already queued or running
+	EnqueueRejectedFull     // queue at capacity
+	EnqueueRejectedStopped  // executor shutting down
+)
+
+// Enqueue queues a job run, reserving the job's single-instance slot for
+// its whole lifecycle (queued, running, retries). Non-manual triggers that
+// are refused get a skipped run row for traceability; manual refusals are
+// surfaced to the caller as HTTP errors instead.
+func (e *Executor) Enqueue(job *Job, trigger string) EnqueueResult {
+	e.mu.Lock()
+	if e.stopped {
+		e.mu.Unlock()
+		return e.reject(job, trigger, EnqueueRejectedStopped, "server shutting down")
+	}
+	if e.inflight[job.ID] {
+		e.mu.Unlock()
+		return e.reject(job, trigger, EnqueueRejectedRunning, "job already running")
+	}
 	select {
 	case e.queue <- runRequest{Job: job, Trigger: trigger}:
-		return true
+		e.inflight[job.ID] = true
+		e.mu.Unlock()
+		return EnqueueOK
 	default:
-		return false
+		e.mu.Unlock()
+		return e.reject(job, trigger, EnqueueRejectedFull, "execution queue is full")
+	}
+}
+
+// reject records a skipped run for refused scheduled triggers so a cron
+// fire never disappears silently.
+func (e *Executor) reject(job *Job, trigger string, res EnqueueResult, reason string) EnqueueResult {
+	if trigger != "manual" {
+		e.recordSkipped(job, trigger, reason)
+	}
+	return res
+}
+
+// InflightJobIDs snapshots which jobs currently hold a slot (queued or
+// running).
+func (e *Executor) InflightJobIDs() map[string]bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make(map[string]bool, len(e.inflight))
+	for id := range e.inflight {
+		out[id] = true
+	}
+	return out
+}
+
+func (e *Executor) isStopped() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.stopped
+}
+
+// releaseInflight frees the job's slot when its execution fully ends.
+func (e *Executor) releaseInflight(jobID string) {
+	e.mu.Lock()
+	delete(e.inflight, jobID)
+	e.mu.Unlock()
+}
+
+func (e *Executor) recordSkipped(job *Job, trigger, reason string) {
+	run := &Run{
+		ID:       newRunID(),
+		JobID:    job.ID,
+		JobName:  job.Name,
+		Type:     jobRunType(job),
+		Trigger:  trigger,
+		Status:   sling.ExecStatusSkipped,
+		Error:    "skipped: " + reason,
+		StartTime: time.Now(),
+		EndTime:   timePtr(time.Now()),
+	}
+	if err := e.db.Create(run).Error; err != nil {
+		g.Debug("could not record skipped run: %s", err)
 	}
 }
 
@@ -95,68 +191,16 @@ func (e *Executor) worker() {
 	}
 }
 
-// tryAcquire applies the job's concurrency policy. Returns:
-//   acquired=true  -> proceed
-//   acquired=false -> skipped (a skipped run row was recorded when wanted)
-func (e *Executor) tryAcquire(job *Job, trigger string) bool {
-	e.activeMu.Lock()
-	defer e.activeMu.Unlock()
-	if e.stopped {
-		return false
-	}
-	if active := e.activeJobs[job.ID]; active {
-		if job.ConcurrencyPolicy == "queue" {
-			// requeue with a delay; the queue keeps FIFO order per worker pick
-			go func() {
-				select {
-				case <-e.stopCh:
-				case <-time.After(2 * time.Second):
-					select {
-					case e.queue <- runRequest{Job: job, Trigger: trigger}:
-					default:
-					}
-				}
-			}()
-			return false
-		}
-		// skip policy: record a skipped run for traceability
-		e.recordSkipped(job, trigger)
-		return false
-	}
-	e.activeJobs[job.ID] = true
-	return true
-}
-
-func (e *Executor) release(jobID string) {
-	e.activeMu.Lock()
-	delete(e.activeJobs, jobID)
-	e.activeMu.Unlock()
-}
-
-func (e *Executor) recordSkipped(job *Job, trigger string) {
-	run := &Run{
-		ID:       newRunID(),
-		JobID:    job.ID,
-		JobName:  job.Name,
-		Type:     jobRunType(job),
-		Trigger:  trigger,
-		Status:   sling.ExecStatusSkipped,
-		Error:    "skipped: job already running",
-		StartTime: time.Now(),
-		EndTime:   timePtr(time.Now()),
-	}
-	if err := e.db.Create(run).Error; err != nil {
-		g.Debug("could not record skipped run: %s", err)
-	}
-}
-
-// execute runs a job request through retry attempts.
+// execute runs a job request through retry attempts. The job's inflight
+// slot (reserved at enqueue) is held across all retries.
 func (e *Executor) execute(req runRequest) {
 	job := req.Job
-	if !e.tryAcquire(job, req.Trigger) {
+	if e.isStopped() {
+		e.releaseInflight(job.ID)
+		e.recordSkipped(job, req.Trigger, "server shutting down before run started")
 		return
 	}
-	defer e.release(job.ID)
+	defer e.releaseInflight(job.ID)
 
 	attempts := job.RetryMax + 1
 	if attempts < 1 {
@@ -184,6 +228,10 @@ func (e *Executor) execute(req runRequest) {
 			return
 		}
 		lastHandle = handle
+		if attempt == 1 {
+			// queued -> running: let clients refresh the job's live state
+			e.PublishJobUpdate(job.ID)
+		}
 		<-handle.Done()
 
 		if handle.Status().IsSuccess() || handle.Status() == sling.ExecStatusCancelled || handle.Status() == sling.ExecStatusSkipped {
@@ -227,14 +275,14 @@ func (e *Executor) launch(job *Job, trigger string, attempt int) (*RunHandle, er
 		if err != nil {
 			return nil, g.Error(err, "could not compile job %s", job.Name)
 		}
-		return e.runner.StartTask(job, trigger, attempt, cfg), nil
+		return e.runner.StartTask(job, trigger, attempt, cfg, ""), nil
 	}
 
 	repl, err := spec.CompileReplication()
 	if err != nil {
 		return nil, g.Error(err, "could not compile job %s", job.Name)
 	}
-	return e.runner.StartReplication(job, trigger, attempt, repl, spec), nil
+	return e.runner.StartReplication(job, trigger, attempt, repl, spec, ""), nil
 }
 
 func (e *Executor) finishCompileError(job *Job, trigger string, err error) {
@@ -277,8 +325,14 @@ func (e *Executor) afterFinish(job *Job, success bool) {
 	if err := e.db.Model(&Job{}).Where("id = ?", job.ID).Updates(updates).Error; err != nil {
 		g.Debug("could not update job bookkeeping: %s", err)
 	}
+	e.PublishJobUpdate(job.ID)
+}
+
+// PublishJobUpdate nudges clients to refetch job state (live run started,
+// bookkeeping changed).
+func (e *Executor) PublishJobUpdate(jobID string) {
 	if e.broker != nil {
-		e.broker.Publish(Event{Type: "job", Payload: map[string]any{"id": job.ID, "updated_at": now}})
+		e.broker.Publish(Event{Type: "job", Payload: map[string]any{"id": jobID, "updated_at": time.Now()}})
 	}
 }
 

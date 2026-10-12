@@ -142,6 +142,8 @@
     "runConfirmTablesMore": "{{tables}} 等 {{count}} 张表",
     "streams": "{{count}} 张表",
     "runTriggered": "已触发「{{name}}」",
+    "alreadyRunning": "任务运行中，请等待完成后再运行。",
+    "alreadyRunningToast": "「{{name}}」正在运行中，同一任务同一时间仅允许一个实例。",
     "wizard": {
       "titleNew": "新建迁移任务",
       "titleEdit": "编辑迁移任务",

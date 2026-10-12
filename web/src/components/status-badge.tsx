@@ -39,7 +39,7 @@ export function StatusBadge({ status, className }: { status: ExecStatus | string
       {live && (
         <span className="relative flex size-1.5">
           {status === "running" && (
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-500 opacity-60" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-500 opacity-60 motion-reduce:hidden" />
           )}
           <span className={cn("relative inline-flex size-1.5 rounded-full", dots[key] ?? "bg-muted-foreground")} />
         </span>

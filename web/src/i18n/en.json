@@ -142,6 +142,8 @@
     "runConfirmTablesMore": "{{tables}} and {{count}} more",
     "streams": "{{count}} tables",
     "runTriggered": "Triggered \"{{name}}\"",
+    "alreadyRunning": "Task is running. Wait for it to finish.",
+    "alreadyRunningToast": "\"{{name}}\" is already running. Only one instance can run at a time.",
     "wizard": {
       "titleNew": "New Migration Job",
       "titleEdit": "Edit Migration Job",

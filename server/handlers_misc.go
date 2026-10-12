@@ -169,6 +169,12 @@ func (a *App) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
 	} else if _, changed := in["backup.cron"]; changed {
 		a.Maintenance.ReloadBackupSchedule()
 	}
+	// stream concurrency applies to runs started after the change
+	if v, changed := in["stream_concurrency"]; changed {
+		if n, err := strconv.Atoi(v); err == nil {
+			a.Runner.SetStreamConcurrency(n)
+		}
+	}
 	a.DB.Audit("update", "setting", "", g.Marshal(in))
 	writeJSON(w, 200, in)
 }

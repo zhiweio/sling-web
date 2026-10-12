@@ -32,7 +32,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react"
-import { api, type JobInput } from "@/lib/api"
+import { api, ApiError, type JobInput } from "@/lib/api"
 import type { Connection, JobSpec, StreamSpec } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -156,6 +156,9 @@ export default function JobEditor() {
   const connsAll = conns ?? []
   const sourceIsDb = isDbConn(spec.source_conn, conns)
 
+  // editing a job that is queued/running: block Save+Run (save alone stays fine)
+  const jobBusy = job?.active_run_state != null
+
   /* ---------- Derived ---------- */
   const canNext = [
     () => spec.source_conn && spec.streams.length > 0,
@@ -201,7 +204,19 @@ export default function JobEditor() {
         verify_rows: advanced.verify_rows,
       }
       const saved = editing ? await api.updateJob(id!, input) : await api.createJob(input)
-      if (thenRun) await api.runJob(saved.id)
+      if (thenRun) {
+        try {
+          await api.runJob(saved.id)
+        } catch (e) {
+          // save already succeeded; a 409 (single-instance guard) only means
+          // this run did not start - surface it and still go watch the runs
+          if (e instanceof ApiError && e.status === 409) {
+            toast.warning(t("jobs.alreadyRunningToast", { name: saved.name }))
+          } else {
+            throw e
+          }
+        }
+      }
       return saved
     },
     onSuccess: (_saved, thenRun) => {
@@ -283,6 +298,9 @@ export default function JobEditor() {
               {!canNext && blockingHint && (
                 <span className="hidden text-xs text-muted-foreground md:inline">{blockingHint}</span>
               )}
+              {jobBusy && (
+                <span className="hidden text-xs text-muted-foreground md:inline">{t("jobs.alreadyRunning")}</span>
+              )}
               {step < 5 ? (
                 <Button onClick={() => setStep((s) => s + 1)} disabled={!canNext} className="min-w-24">
                   {t("app.actions.next")} <ArrowRight className="size-4" />
@@ -305,7 +323,8 @@ export default function JobEditor() {
                         save.mutate(true)
                       }
                     }}
-                    disabled={!canNext || save.isPending}
+                    disabled={!canNext || save.isPending || jobBusy}
+                    title={jobBusy ? t("jobs.alreadyRunning") : undefined}
                   >
                     <Play className="size-4" /> {t("app.actions.save")} + {t("app.actions.run")}
                   </Button>

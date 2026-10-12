@@ -288,8 +288,8 @@ func TestRunFinishedWiredViaExecutor(t *testing.T) {
 	}
 
 	app.Executor.Start()
-	if !app.Executor.Enqueue(job, "manual") {
-		t.Fatal("queue full?!")
+	if app.Executor.Enqueue(job, "manual") != EnqueueOK {
+		t.Fatal("enqueue refused?!")
 	}
 
 	deadline := time.Now().Add(10 * time.Second)

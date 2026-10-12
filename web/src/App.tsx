@@ -56,6 +56,8 @@ function SseBridge() {
     onNotification: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
     onJob: () => {
       qc.invalidateQueries({ queryKey: ["jobs"] })
+      // editor detail queries carry the live run decoration too
+      qc.invalidateQueries({ queryKey: ["job"] })
       qc.invalidateQueries({ queryKey: ["stats"] })
     },
   })

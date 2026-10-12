@@ -121,7 +121,7 @@ type Job struct {
 
 	// Execution policies
 	SchemaPolicy     string `json:"schema_policy,omitempty" gorm:"column:schema_policy;size:16;default:auto"` // auto|manual|stop
-	ConcurrencyPolicy string `json:"concurrency_policy,omitempty" gorm:"column:concurrency_policy;size:16;default:skip"` // skip|queue
+	ConcurrencyPolicy string `json:"concurrency_policy,omitempty" gorm:"column:concurrency_policy;size:16;default:skip"` // deprecated: single-instance enforced at enqueue; column kept for schema compat
 	RetryMax         int    `json:"retry_max,omitempty" gorm:"column:retry_max;default:0"`
 	RetryBackoffSec  int    `json:"retry_backoff_sec,omitempty" gorm:"column:retry_backoff_sec;default:60"`
 	VerifyRows       bool   `json:"verify_rows,omitempty" gorm:"column:verify_rows"`

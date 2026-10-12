@@ -16,6 +16,37 @@ func newID() string {
 
 /* ---------------------------------- CRUD --------------------------------- */
 
+// jobWithState decorates a job with its live execution state so the UI can
+// disable duplicate triggers. ActiveRunState is "queued" or "running";
+// ActiveRunID is only known once the run has started.
+type jobWithState struct {
+	Job
+	ActiveRunID    string `json:"active_run_id,omitempty"`
+	ActiveRunState string `json:"active_run_state,omitempty"`
+}
+
+func (a *App) decorateJobs(jobs []Job) []jobWithState {
+	inflight := a.Executor.InflightJobIDs()
+	runIDByJob := map[string]string{}
+	for _, h := range a.Runner.Active() {
+		if h.JobID != "" {
+			runIDByJob[h.JobID] = h.ID
+		}
+	}
+	out := make([]jobWithState, len(jobs))
+	for i := range jobs {
+		out[i] = jobWithState{Job: jobs[i], ActiveRunID: runIDByJob[jobs[i].ID]}
+		if inflight[jobs[i].ID] {
+			if out[i].ActiveRunID != "" {
+				out[i].ActiveRunState = "running"
+			} else {
+				out[i].ActiveRunState = "queued"
+			}
+		}
+	}
+	return out
+}
+
 func (a *App) handleJobsList(w http.ResponseWriter, r *http.Request) {
 	f := JobFilter{
 		Search: r.URL.Query().Get("q"),
@@ -34,12 +65,7 @@ func (a *App) handleJobsList(w http.ResponseWriter, r *http.Request) {
 		apiErr(w, err)
 		return
 	}
-	// strip heavy spec payloads from list view
-	type jobBrief struct {
-		Job
-		SpecOmitted bool `json:"-"`
-	}
-	writeJSON(w, 200, map[string]any{"jobs": jobs, "total": total})
+	writeJSON(w, 200, map[string]any{"jobs": a.decorateJobs(jobs), "total": total})
 }
 
 // jobInput is the create/update payload.
@@ -132,7 +158,7 @@ func (a *App) handleJobsGet(w http.ResponseWriter, r *http.Request) {
 		apiErr(w, err)
 		return
 	}
-	writeJSON(w, 200, job)
+	writeJSON(w, 200, a.decorateJobs([]Job{*job})[0])
 }
 
 func (a *App) handleJobsUpdate(w http.ResponseWriter, r *http.Request) {
@@ -244,11 +270,25 @@ func (a *App) handleJobsRun(w http.ResponseWriter, r *http.Request) {
 		apiErr(w, err)
 		return
 	}
-	if !a.Executor.Enqueue(job, "manual") {
+	switch a.Executor.Enqueue(job, "manual") {
+	case EnqueueRejectedRunning:
+		// single-instance guard: one queued-or-running execution per job
+		a.DB.Audit("run", "job", job.ID, "rejected duplicate trigger: already running")
+		body := map[string]any{"error": "job already has a run in progress", "status": 409}
+		for _, h := range a.Runner.Active() {
+			if h.JobID == job.ID {
+				body["run_id"] = h.ID
+				break
+			}
+		}
+		writeJSON(w, 409, body)
+		return
+	case EnqueueRejectedFull, EnqueueRejectedStopped:
 		writeErr(w, 503, "execution queue is full")
 		return
 	}
 	a.DB.Audit("run", "job", job.ID, "manual trigger")
+	a.Executor.PublishJobUpdate(job.ID)
 	writeJSON(w, 202, map[string]any{"queued": true, "job": job.Name})
 }
 
