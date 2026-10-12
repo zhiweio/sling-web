@@ -223,49 +223,56 @@ clean:
 
 
 
-# ---- sling-server 工作台 (Browser/Server) ----
+# ---- sling-server workbench (Browser/Server) ----
 
-# 安装前端依赖 (web/)
+# Install frontend dependencies (web/)
 web-install:
     cd web && corepack enable && pnpm install
 
-# 构建前端 (web/dist)
+# Build the frontend (web/dist)
 web-build:
     cd web && pnpm run build
 
-# 前端类型检查
+# Frontend checks: i18n key parity + type check
 web-check: web-install
-    cd web && npx tsc -b
+    cd web && node scripts/check-i18n.mjs && npx tsc -b
 
-# 开发模式: 需两个终端
-#   1) just web-dev      (Vite :5173, /api 代理到 :5666)
-#   2) just dev          (Go server, 反代到 Vite)
+# Dev mode: two terminals required
+#   1) just web-dev      (Vite :5173, /api proxied to :5666)
+#   2) just dev          (Go server, reverse-proxies Vite)
 web-dev:
     cd web && pnpm run dev
 
-# Go server 开发模式 (dev build-tag: UI 反代到 Vite :5173)
+# Go server dev mode (dev build tag: UI reverse-proxied to Vite :5173)
 dev:
     #!/usr/bin/env bash
     set -e
     go run -tags dev ./cmd/sling-server --no-open --port 5666
 
-# 构建单一二进制 (含内嵌前端)
+# Build the single binary (frontend embedded)
 build-server: web-build
     #!/usr/bin/env bash
     set -e
     echo "Building sling-server (embedded UI)..."
-    go build -p 1 -ldflags="-s -w" -o cmd/sling-server/sling-server ./cmd/sling-server
-    ./cmd/sling-server/sling-server version
+    # Windows: Node's spawn (used by e2e) cannot launch an extensionless
+    # PE binary, so produce sling-server.exe there.
+    if [[ "${OS:-}" == "Windows_NT" ]]; then
+        go build -p 1 -ldflags="-s -w" -o cmd/sling-server/sling-server.exe ./cmd/sling-server
+        ./cmd/sling-server/sling-server.exe version
+    else
+        go build -p 1 -ldflags="-s -w" -o cmd/sling-server/sling-server ./cmd/sling-server
+        ./cmd/sling-server/sling-server version
+    fi
 
-# sling-server 单元测试
+# sling-server unit tests
 test-server:
     (cd server && go test -count=1 -timeout 300s)
 
-# 发布快照 (goreleaser, 需本地有 goreleaser)
+# Release snapshot (goreleaser, requires local goreleaser)
 release-snapshot:
     goreleaser --snapshot --clean
 
-# E2E 测试 (Playwright, 需先 build-server)
+# E2E tests (Playwright, requires build-server first)
 test-e2e:
     #!/usr/bin/env bash
     set -e

@@ -1,16 +1,17 @@
-# sling-server 发布配置（goreleaser）
-# 前端先构建（before.hooks），再编译各平台单一二进制（go:embed 内嵌 UI）。
-# SQLite 为 CGO 依赖 → 在 GitHub Actions 原生 OS 矩阵上构建（与 CLI 现有 CI 一致）。
-# 本地快照: goreleaser --snapshot --clean
+# sling-server release config (goreleaser).
+# The frontend is built first (before.hooks), then per-platform single
+# binaries are compiled with the UI embedded via go:embed.
+# SQLite needs CGO → build on a native OS matrix (same as the CLI CI).
+# Local snapshot: goreleaser --snapshot --clean
 version: 2
 
 project_name: sling-server
 
 before:
   hooks:
-    - cmd: npm ci
+    - cmd: corepack enable && pnpm install --frozen-lockfile
       dir: web
-    - cmd: npm run build
+    - cmd: pnpm run build
       dir: web
 
 builds:
@@ -27,7 +28,7 @@ builds:
       - amd64
       - arm64
     ignore:
-      # windows/arm64 本机无 CGO 交叉工具链，按需开启
+      # windows/arm64 needs a native CGO cross toolchain; enable as needed
       - goos: windows
         goarch: arm64
     ldflags:
@@ -60,7 +61,7 @@ changelog:
 snapshot:
   version_template: "{{ incpatch .Version }}-dev"
 
-# 可选分发渠道（发布时按需启用）
+# Optional distribution channels (enable at release time)
 # brews:
 #   - repository:
 #       owner: your-org

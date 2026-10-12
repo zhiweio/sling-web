@@ -1,4 +1,5 @@
-# sling-server 数据迁移工作台 —— 多阶段构建，产出轻量运行镜像
+# sling-server Data Migration Workbench — multi-stage build producing a
+# lightweight runtime image.
 # docker build -t sling-server .
 # docker run -p 5666:5666 -v sling-data:/root/.sling sling-server
 FROM node:22-slim AS frontend

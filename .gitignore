@@ -31,10 +31,6 @@ tests/replications/r.test.yaml
 tests/replications/r.test.2.yaml
 tests/pipelines/p.test.yaml
 
-*..go
-*..md
-*__test.go
-
 appicon.png
 wails.json
 
@@ -51,12 +47,13 @@ AGENTS.md
 CLAUDE.md
 
 temp/
-docs/
 tests/evals/results/*.jsonl
 tests/evals/results/*.summary.json
 tests/evals/eval.duckdb
 
 cmd/sling/sling
+cmd/sling-server/sling-server
+/NUL
 
 # Local tooling / workspace state
 .codegraph/
