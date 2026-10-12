@@ -261,15 +261,19 @@ func (h *RunHandle) Snapshot() Snapshot {
 		EndTime:    h.endTime,
 		DurationMs: time.Since(h.started).Milliseconds(),
 	}
-	var rows uint64
+	var rows, bytes uint64
 	var progress string
 	for _, t := range h.tasks {
 		rows += t.GetCount()
+		// same counter the engine's progress bar displays (bytes read from source)
+		inBytes, _ := t.GetBytes()
+		bytes += inBytes
 		if p := t.Progress; p != "" && !t.Status.IsFinished() {
 			progress = p
 		}
 	}
 	snap.Rows = rows
+	snap.Bytes = bytes
 	snap.DurationMs = time.Since(h.started).Milliseconds()
 	if snap.DurationMs > 0 {
 		snap.Rate = float64(rows) / (float64(snap.DurationMs) / 1000)
@@ -481,6 +485,9 @@ func (h *RunHandle) executeStreamTask(taskExecID string, cfg *sling.Config, repl
 	}
 	ss.Status = task.Status
 	ss.Rows = task.GetCount()
+	if inBytes, _ := task.GetBytes(); inBytes > 0 {
+		ss.Bytes = inBytes
+	}
 	if task.Err != nil {
 		ss.Error = task.Err.Error()
 	}

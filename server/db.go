@@ -217,6 +217,7 @@ type StreamStatus struct {
 	Object  string          `json:"object,omitempty"`
 	Status  sling.ExecStatus `json:"status"`
 	Rows    uint64          `json:"rows,omitempty"`
+	Bytes   uint64          `json:"bytes,omitempty"`
 	Error   string          `json:"error,omitempty"`
 }
 

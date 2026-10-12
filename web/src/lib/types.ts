@@ -161,6 +161,7 @@ export interface StreamStatus {
   object?: string
   status: ExecStatus
   rows?: number
+  bytes?: number
   error?: string
 }
 

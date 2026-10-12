@@ -136,7 +136,9 @@ export default function RunDetail() {
               <div key={`${s.stream}-${i}`} className="flex items-center gap-3 border-b px-4 py-2 text-sm last:border-b-0">
                 <StatusBadge status={s.status} />
                 <span className="min-w-0 flex-1 truncate font-mono text-xs">{s.object ?? s.stream}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">{formatNumber(s.rows)} rows</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatNumber(s.rows)} rows{s.bytes ? ` · ${formatBytes(s.bytes)}` : ""}
+                </span>
               </div>
             ))}
           </div>
