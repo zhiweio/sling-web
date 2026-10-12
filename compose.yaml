@@ -1,0 +1,53 @@
+# sling-server — Data Migration Workbench.
+#
+#   docker compose up -d --build     # then open http://127.0.0.1:5666
+#
+# Builds the single binary from Dockerfile.server (React frontend + Go
+# server, UI embedded). State (SQLite, credential vault, logs, backups)
+# lives in the `sling-data` named volume mounted at /var/lib/sling.
+#
+# Configuration — put overrides in a `.env` file next to this one (compose
+# reads it automatically):
+#
+#   SLING_SERVER_TOKEN  bearer token protecting the API — SET THIS before
+#                       publishing the port beyond localhost (default: unset = no auth)
+#   SLING_BIND          host interface to publish on     (default: 127.0.0.1;
+#                       set 0.0.0.0 for LAN access — together with a token)
+#   SLING_PORT          host port                        (default: 5666)
+#   TZ                  timezone for the cron scheduler  (default: UTC)
+#   VERSION             version string + image tag       (default: dev)
+
+services:
+  sling-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      args:
+        VERSION: ${VERSION:-dev}
+    image: sling-server:${VERSION:-dev}
+    restart: unless-stopped
+    ports:
+      - "${SLING_BIND:-127.0.0.1}:${SLING_PORT:-5666}:5666"
+    environment:
+      SLING_SERVER_TOKEN: ${SLING_SERVER_TOKEN:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - sling-data:/var/lib/sling
+    # hardening: the process writes only to the volume; /tmp (duckdb /
+    # stream spill files) is a tmpfs, the rest of the rootfs is read-only
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # healthcheck (curl /api/health with token) is inherited from the image
+
+volumes:
+  sling-data:

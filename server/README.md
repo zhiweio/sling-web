@@ -58,7 +58,7 @@ behavior).
 
 ## Security Model
 
-- Binds to `127.0.0.1` only by default; for LAN deployment add `--token <random-secret>` (Bearer auth)
+- Binds to `127.0.0.1` only by default; for LAN deployment add `--token <random-secret>` (Bearer auth). In Docker the process binds `0.0.0.0` inside the container (`SLING_SERVER_HOST`), and `compose.yaml` keeps the host-side port on `127.0.0.1` unless `SLING_BIND` is changed
 - Connection credentials: AES-256-GCM encrypted in `~/.sling/server.db`; the master key lives separately in `~/.sling/server.key` (0600)
 - Optional `--set-passphrase` wraps the master key with a passphrase (Argon2id)
 - Logs are automatically redacted (reusing the engine's `RedactLogLine`); APIs never return plaintext passwords
@@ -66,7 +66,7 @@ behavior).
 ## CLI Flags
 
 ```
-sling-server [--port 5666] [--workdir ~/.sling] [--no-open]
+sling-server [--port 5666] [--host 127.0.0.1] [--workdir ~/.sling] [--no-open]
              [--token SECRET] [--concurrency 4] [--stream-concurrency 1]
              [--retention 90] [--set-passphrase]
 sling-server version
@@ -110,7 +110,11 @@ specs (`e2e/specs/acceptance.yaml`).
 
 - **Single binary**: unpack and run (double-click on Windows / right-click
   Open on macOS / command line on Linux)
-- **Docker**: `docker build -f Dockerfile.server -t sling-server . && docker run -p 5666:5666 -v sling-data:/root/.sling sling-server`
+- **Docker Compose** (recommended for servers): `docker compose up -d --build`
+  from the repo root — state persists in the `sling-data` volume; configure
+  via a `.env` file (`SLING_SERVER_TOKEN`, `SLING_BIND`, `SLING_PORT`, `TZ`,
+  documented in `compose.yaml`)
+- **Docker**: `docker build -f Dockerfile.server -t sling-server . && docker run -p 5666:5666 -v sling-data:/var/lib/sling sling-server`
 - **systemd**: `deploy/sling-server.service`
 - **Releases**: `goreleaser --snapshot --clean` for a local all-platform
   snapshot; CI produces official artifacts on a native OS matrix

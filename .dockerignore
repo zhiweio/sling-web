@@ -1,0 +1,30 @@
+# Keep the build context lean: web/node_modules alone is ~400MB and .git
+# ~150MB. Excluding host artifacts also stops them from cache-busting the
+# backend layer, and web/dist is rebuilt inside the image (frontend stage)
+# so a stale local dist can never leak into the binary.
+
+# VCS / agent tooling
+.git
+.gitignore
+.zcode
+.codegraph
+AGENTS.md
+CLAUDE.md
+
+# dependencies & caches (reinstalled in the frontend stage)
+node_modules
+**/node_modules
+web/dist
+web/.vite
+web/coverage
+
+# local build artifacts (rebuilt inside the image)
+cmd/sling-server/sling-server
+cmd/sling-server/sling-server.exe
+
+# scratch & test trees not needed to compile the server
+temp
+e2e
+tests
+scripts
+*.log

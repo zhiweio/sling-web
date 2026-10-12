@@ -53,7 +53,7 @@ just dev        # 终端 2: go run -tags dev ./cmd/sling-server
 
 ## 安全模型
 
-- 默认仅绑定 `127.0.0.1`;局域网部署请加 `--token <随机串>`(Bearer 鉴权)
+- 默认仅绑定 `127.0.0.1`;局域网部署请加 `--token <随机串>`(Bearer 鉴权)。Docker 容器内进程绑定 `0.0.0.0`(`SLING_SERVER_HOST`),`compose.yaml` 默认宿主侧端口仍只监听 `127.0.0.1`,需改 `SLING_BIND` 才对外
 - 连接凭据:AES-256-GCM 加密存储于 `~/.sling/server.db`,主密钥独立存放于 `~/.sling/server.key`(0600)
 - 可选 `--set-passphrase` 用口令包裹主密钥(Argon2id)
 - 日志自动脱敏(复用引擎 `RedactLogLine`);API 从不返回明文密码
@@ -61,7 +61,7 @@ just dev        # 终端 2: go run -tags dev ./cmd/sling-server
 ## CLI 参数
 
 ```
-sling-server [--port 5666] [--workdir ~/.sling] [--no-open]
+sling-server [--port 5666] [--host 127.0.0.1] [--workdir ~/.sling] [--no-open]
              [--token SECRET] [--concurrency 4] [--stream-concurrency 1]
              [--retention 90] [--set-passphrase]
 sling-server version
@@ -100,7 +100,8 @@ node e2e/ai/run-acceptance.mjs   # AI 验收(规格驱动,JUnit 报告)
 ## 部署
 
 - **单二进制**:解压即用(Windows 双击 / macOS 右键打开 / Linux 命令行)
-- **Docker**:`docker build -f Dockerfile.server -t sling-server . && docker run -p 5666:5666 -v sling-data:/root/.sling sling-server`
+- **Docker Compose**(服务器推荐):仓库根目录 `docker compose up -d --build`,数据持久化在 `sling-data` 卷;用 `.env` 配置(`SLING_SERVER_TOKEN`、`SLING_BIND`、`SLING_PORT`、`TZ`,见 `compose.yaml` 头部说明)
+- **Docker**:`docker build -f Dockerfile.server -t sling-server . && docker run -p 5666:5666 -v sling-data:/var/lib/sling sling-server`
 - **systemd**:`deploy/sling-server.service`
 - **发布**:`goreleaser --snapshot --clean` 本地全平台快照;CI 原生 OS 矩阵出正式产物(`.goreleaser.yml`)
 

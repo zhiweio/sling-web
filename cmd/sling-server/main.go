@@ -3,7 +3,7 @@
 //
 // Usage:
 //
-//	sling-server serve [--port 5666] [--workdir DIR] [--open] [--token T]
+//	sling-server serve [--port 5666] [--host 127.0.0.1] [--workdir DIR] [--no-open] [--token T]
 //	sling-server version
 package main
 
@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"github.com/flarco/g"
-	"golang.org/x/term"
 	"github.com/slingdata-io/sling-cli/core"
 	"github.com/slingdata-io/sling-cli/core/env"
 	"github.com/slingdata-io/sling-cli/server"
 	"github.com/slingdata-io/sling-cli/web"
+	"golang.org/x/term"
 )
 
 var version = "dev"
@@ -40,9 +40,10 @@ func main() {
 
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	port := fs.Int("port", 5666, "HTTP port (auto-increments when busy)")
+	host := fs.String("host", envOr("SLING_SERVER_HOST", "127.0.0.1"), "listen host (0.0.0.0 for containers; env SLING_SERVER_HOST)")
 	workdir := fs.String("workdir", "", "data directory (default ~/.sling)")
 	noOpen := fs.Bool("no-open", false, "do not open the browser on start")
-	token := fs.String("token", "", "bearer token protecting the API (for LAN use)")
+	token := fs.String("token", os.Getenv("SLING_SERVER_TOKEN"), "bearer token protecting the API (for LAN use; env SLING_SERVER_TOKEN)")
 	concurrency := fs.Int("concurrency", 4, "max concurrently running jobs")
 	streamConcurrency := fs.Int("stream-concurrency", 1, "replication stream parallelism")
 	retention := fs.Int("retention", 90, "days to keep run history & logs (0 = forever)")
@@ -84,7 +85,7 @@ func main() {
 
 	// single-instance behavior: if an instance already serves on the port
 	// (or the next few), open the browser to it and exit.
-	addr, existing := findFreePort("127.0.0.1", *port)
+	addr, existing := findFreePort(*host, *port)
 	if existing != "" {
 		fmt.Printf("sling-server is already running → %s\n", existing)
 		if !*noOpen {
@@ -226,6 +227,16 @@ func setVaultPassphrase() {
 	}
 	fmt.Printf("✓ Vault encrypted and saved at %s\n", env.HomeDir)
 	_ = app
+}
+
+// envOr returns the value of key when set (non-empty), else fallback. Flags
+// read env defaults this way so containers can configure without overriding
+// the command line.
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 func readPassword() (string, error) {
