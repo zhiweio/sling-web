@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"io"
 	"os"
@@ -53,6 +54,9 @@ func (conn *OracleConn) Init() error {
 
 	if conn.BaseConn.GetProp("allow_bulk_import") == "" {
 		conn.SetProp("allow_bulk_import", "true")
+	}
+	if conn.BaseConn.GetProp("use_array_dml") == "" {
+		conn.SetProp("use_array_dml", "true")
 	}
 
 	instance := Connection(conn)
@@ -263,10 +267,17 @@ func (conn *OracleConn) sqlldrPath() string {
 	return "sqlldr"
 }
 
-// BulkImportStream bulk import stream
+// BulkImportStream bulk import stream. Preference order:
+//  1. sqlldr direct path when the binary is available (fastest, external),
+//  2. go-ora array DML — the embedded bulk loader, no Oracle client needed,
+//  3. generic batched cursor INSERT (disable with use_array_dml=false).
 func (conn *OracleConn) BulkImportStream(tableFName string, ds *iop.Datastream) (count uint64, err error) {
 	_, err = exec.LookPath(conn.sqlldrPath())
 	if err != nil {
+		if conn.GetProp("allow_bulk_import") == "true" && cast.ToBool(conn.GetProp("use_array_dml")) {
+			g.Debug("sqlldr not found in path. Using go-ora array DML bulk load...")
+			return conn.ArrayDMLStream(tableFName, ds)
+		}
 		g.Debug("sqlldr not found in path. Using cursor...")
 		return conn.BaseConn.InsertBatchStream(tableFName, ds)
 	} else if conn.GetProp("allow_bulk_import") != "true" {
@@ -294,6 +305,124 @@ func (conn *OracleConn) BulkImportStream(tableFName string, ds *iop.Datastream) 
 	}
 
 	return countTot, nil
+}
+
+// arrayDMLBatchRows is the number of rows bound per array-DML round-trip.
+const arrayDMLBatchRows = 1000
+
+// ArrayDMLStream bulk-loads a stream with go-ora array DML: columnar binds,
+// one network round-trip per batch, on a dedicated raw driver connection.
+// It is the embedded alternative to sqlldr — same pure-Go wire protocol
+// stack, no Oracle client install needed.
+func (conn *OracleConn) ArrayDMLStream(tableFName string, ds *iop.Datastream) (count uint64, err error) {
+	context := ds.Context
+
+	// a side connection bypasses the pool's open transaction and any SSH
+	// tunnel; both flows need the generic path's semantics
+	if conn.tx != nil || conn.GetProp("ssh_url") != "" {
+		return conn.BaseConn.InsertBatchStream(tableFName, ds)
+	}
+
+	raw, err := go_ora.NewConnection(conn.ConnString(), nil)
+	if err != nil {
+		g.Debug("could not build array-dml connection (%s). Using cursor...", g.ErrMsgSimple(err))
+		return conn.BaseConn.InsertBatchStream(tableFName, ds)
+	}
+	if err = raw.Open(); err != nil {
+		g.Debug("could not open array-dml connection (%s). Using cursor...", g.ErrMsgSimple(err))
+		return conn.BaseConn.InsertBatchStream(tableFName, ds)
+	}
+	defer raw.Close()
+
+	columns, err := conn.GetColumns(tableFName, ds.Columns.Names()...)
+	if err != nil {
+		err = g.Error(err, "could not get column list")
+		return
+	}
+	for _, col := range columns {
+		// array-binding LOBs is not reliable: let the cursor path take it
+		if strings.Contains(strings.ToUpper(col.DbType), "LOB") {
+			g.Debug("target has LOB column %s: array dml disabled, using cursor", col.Name)
+			return conn.BaseConn.InsertBatchStream(tableFName, ds)
+		}
+	}
+
+	ds, err = ds.Shape(columns)
+	if err != nil {
+		err = g.Error(err, "could not shape stream")
+		return
+	}
+
+	fields := columns.Names()
+	qFields := make([]string, len(fields))
+	binds := make([]string, len(fields))
+	for i, f := range fields {
+		qFields[i] = conn.Quote(f)
+		binds[i] = g.F(":%d", i+1)
+	}
+	insertSQL := fmt.Sprintf(
+		"insert into %s (%s) values (%s)",
+		tableFName, strings.Join(qFields, ", "), strings.Join(binds, ", "),
+	)
+	g.Debug("array dml into %s (%d cols, batches of %d rows)", tableFName, len(fields), arrayDMLBatchRows)
+
+	flush := func(rows [][]interface{}) error {
+		cols := make([][]driver.Value, len(fields))
+		for i := range cols {
+			cols[i] = make([]driver.Value, len(rows))
+		}
+		for r, row := range rows {
+			if len(row) != len(fields) {
+				return g.Error("row %d has %d values, want %d", r, len(row), len(fields))
+			}
+			for c := range fields {
+				val, err := oracleDriverValue(row[c])
+				if err != nil {
+					return g.Error(err, "could not convert value of %s (row %d)", fields[c], r)
+				}
+				cols[c][r] = val
+			}
+		}
+		if _, err := raw.BulkInsert(insertSQL, len(rows), cols...); err != nil {
+			return g.Error(err, "could not array-dml insert into %s (batch of %d rows)", tableFName, len(rows))
+		}
+		return nil
+	}
+
+	batchRows := [][]interface{}{}
+	for batch := range ds.BatchChan {
+		for row := range batch.Rows {
+			select {
+			case <-context.Ctx.Done():
+				return count, context.Err()
+			default:
+			}
+			batchRows = append(batchRows, row)
+			count++
+			if len(batchRows) >= arrayDMLBatchRows {
+				if err = flush(batchRows); err != nil {
+					context.CaptureErr(err)
+					return count, err
+				}
+				batchRows = nil
+			}
+		}
+	}
+	if len(batchRows) > 0 {
+		if err = flush(batchRows); err != nil {
+			context.CaptureErr(err)
+			return count, err
+		}
+	}
+
+	ds.SetEmpty()
+	return count, context.Err()
+}
+
+// oracleDriverValue narrows a stream value to a type go-ora binds natively,
+// using the same conversion database/sql would apply on the cursor path.
+func oracleDriverValue(v interface{}) (driver.Value, error) {
+	return driver.DefaultParameterConverter.ConvertValue(v)
 }
 
 // SQLLoad uses sqlldr to Bulk Import
