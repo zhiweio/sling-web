@@ -1,6 +1,7 @@
 package sling
 
 import (
+	"crypto/rand"
 	"math"
 	"os"
 	"strings"
@@ -40,6 +41,17 @@ func createSchemaIfNotExists(conn database.Connection, schemaName string) (creat
 	}
 
 	if !lo.Contains(schemas, schemaName) {
+		// An Oracle "schema" is a user: a generic `create schema` fails with
+		// ORA-02420. Provision a user (random password, quota + basic grants
+		// on the database's default permanent tablespace) instead.
+		if conn.GetType() == dbio.TypeDbOracle {
+			created, err = createOracleSchema(conn, schemaName)
+			if err != nil {
+				return false, g.Error(err, "Error creating schema %s", conn.Quote(schemaName))
+			}
+			return created, nil
+		}
+
 		sql := g.R(
 			conn.Template().Value("core.create_schema"),
 			"schema", conn.Quote(schemaName),
@@ -52,6 +64,61 @@ func createSchemaIfNotExists(conn database.Connection, schemaName string) (creat
 	}
 
 	return created, nil
+}
+
+// createOracleSchema provisions an Oracle schema, which is a user. The
+// password is random (sling connects through the configured connection, not
+// as this user; reset it with `ALTER USER ... IDENTIFIED BY ...` if direct
+// login is ever needed). Tablespace quota and CREATE TABLE/SESSION grants are
+// given on the database's default permanent tablespace.
+func createOracleSchema(conn database.Connection, schemaName string) (created bool, err error) {
+	// database's default permanent tablespace (USERS on standard installs)
+	ts := "USERS"
+	data, qErr := conn.Query("select property_value from database_properties where property_name = 'DEFAULT_PERMANENT_TABLESPACE'")
+	if qErr == nil && len(data.Rows) > 0 {
+		if v := strings.TrimSpace(cast.ToString(data.Rows[0][0])); v != "" {
+			ts = v
+		}
+	}
+
+	password, err := randomOraclePassword()
+	if err != nil {
+		return false, g.Error(err, "could not generate password")
+	}
+
+	stmts := []string{
+		g.F(`CREATE USER %s IDENTIFIED BY "%s" DEFAULT TABLESPACE %s QUOTA UNLIMITED ON %s`,
+			conn.Quote(schemaName), password, conn.Quote(ts), conn.Quote(ts)),
+		g.F(`GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SEQUENCE TO %s`, conn.Quote(schemaName)),
+	}
+	for _, sql := range stmts {
+		if _, err = conn.Exec(sql); err != nil {
+			return false, g.Error(err, "could not create Oracle user %s (needs CREATE USER privilege; or create the schema manually)", schemaName)
+		}
+	}
+
+	g.Info(`created Oracle schema/user %s on tablespace %s (random password set, reset with "ALTER USER %s IDENTIFIED BY ..." if direct login is needed)`, schemaName, ts, schemaName)
+	return true, nil
+}
+
+// randomOraclePassword generates an alphanumeric password meeting Oracle's
+// default complexity profile (upper, lower and digit, length >= 8).
+func randomOraclePassword() (string, error) {
+	const charset = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	const n = 20
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	pw := make([]byte, n)
+	for i, v := range b {
+		pw[i] = charset[int(v)%len(charset)]
+	}
+	// guarantee the three character classes
+	pw[0] = 'A'
+	pw[1] = 'b'
+	pw[2] = '3'
+	return string(pw), nil
 }
 
 func createTableIfNotExists(conn database.Connection, data iop.Dataset, table *database.Table, temp bool) (created bool, err error) {
