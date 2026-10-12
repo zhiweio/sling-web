@@ -71,6 +71,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # golangci-lint typechecks cmd/sling-server, which embeds web/dist
+      # (see the placeholder note in the server-test job).
+      - name: Create dist placeholder for go:embed
+        run: mkdir -p web/dist && touch web/dist/.placeholder
+
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
