@@ -11,6 +11,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
@@ -1497,6 +1498,28 @@ func ReadConnectionsFromFile(path string) (conns map[string]Connection, err erro
 	return ReadConnections(env)
 }
 
+// connLoadWarned tracks connection-load issues already warned, so a broken
+// connection logs once per process instead of on every GetLocalConns refresh
+// (the server force-refreshes on each API call).
+var connLoadWarned sync.Map
+
+// warnConnLoad logs a connection-load failure as a single line. Error groups
+// join missing-property errors with newlines, which would otherwise spill
+// into bare, unprefixed log lines.
+func warnConnLoad(name string, err error) {
+	parts := strings.Split(g.ErrMsgSimple(err), "\n")
+	msgs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			msgs = append(msgs, p)
+		}
+	}
+	if _, dup := connLoadWarned.LoadOrStore(name+"|"+strings.Join(msgs, "; "), struct{}{}); dup {
+		return
+	}
+	g.Warn("could not load connection %s: %s", name, strings.Join(msgs, "; "))
+}
+
 func ReadConnections(env map[string]interface{}) (conns map[string]Connection, err error) {
 	conns = map[string]Connection{}
 
@@ -1514,11 +1537,11 @@ func ReadConnections(env map[string]interface{}) (conns map[string]Connection, e
 
 					conn, err := NewConnectionFromMap(g.M("name", name, "data", data, "type", data["type"]))
 					if err != nil {
-						g.Warn("could not load connection %s: %s", name, g.ErrMsgSimple(err))
+						warnConnLoad(name, err)
 						continue
 					}
 					if err = conn.setURL(); err != nil {
-						g.Warn("could not load connection %s: %s", name, g.ErrMsgSimple(err))
+						warnConnLoad(name, err)
 						continue
 					}
 
