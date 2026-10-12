@@ -6,6 +6,8 @@
 #   docker run -p 5666:5666 -v sling-data:/var/lib/sling sling-server
 #
 # Or simply: docker compose up -d --build   (see compose.yaml)
+# Optional Oracle SQL*Loader support: set WITH_ORACLE=true (build arg,
+# e.g. in .env) to bake in the Oracle Instant Client.
 
 # ---- 1/3 · frontend: build the React SPA embedded via go:embed ----
 FROM node:22-slim AS frontend
@@ -41,10 +43,60 @@ RUN apt-get update \
  && useradd --system --uid 10001 --gid sling --home-dir /var/lib/sling sling \
  && mkdir -p /var/lib/sling && chown sling:sling /var/lib/sling
 COPY --from=backend --chown=10001:10001 /out/sling-server /usr/local/bin/sling-server
+
+# ---- optional: Oracle SQL*Loader for bulk writes ----
+# sling prefers sqlldr (Oracle Instant Client "Tools" package) as the Oracle
+# bulk-write fast path and silently falls back to pure-Go array DML when the
+# binary is absent (core/dbio/database/database_oracle.go). Per Oracle's
+# utilities guide (B.3–B.5), Tools must be unpacked into the same directory
+# as the matching-version Basic/Light OCI package, which is put on PATH and
+# LD_LIBRARY_PATH; no ORACLE_HOME is needed.
+# Enable at build time: WITH_ORACLE=true via .env / --build-arg (adds ~80MB;
+# Basic Light = English-only messages, UTF-8 and common charsets supported).
+# Version bumps: ORACLE_IC_VERSION drives the download directory too
+# (19.25.0.0.0dbru -> instantclient/1925000).
+ARG TARGETARCH
+ARG WITH_ORACLE=false
+ARG ORACLE_IC_VERSION=19.25.0.0.0dbru
+RUN if [ "$WITH_ORACLE" = "true" ]; then \
+      case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+        amd64) ic_arch=x64 ;; \
+        arm64) ic_arch=arm64 ;; \
+        *) echo "WITH_ORACLE=true: unsupported architecture ${TARGETARCH}" >&2; exit 1 ;; \
+      esac \
+      && ic_dir="$(echo "$ORACLE_IC_VERSION" | awk -F. '{print $1 $2 "0000"}')" \
+      && ic_base="https://download.oracle.com/otn_software/linux/instantclient/${ic_dir}" \
+      && apt-get update \
+      && apt-get install -y --no-install-recommends unzip awk libaio1 \
+      && mkdir -p /opt/oracle \
+      && curl -fsSL -o /tmp/ic-basic.zip "${ic_base}/instantclient-basiclite-linux.${ic_arch}-${ORACLE_IC_VERSION}.zip" \
+      && curl -fsSL -o /tmp/ic-tools.zip "${ic_base}/instantclient-tools-linux.${ic_arch}-${ORACLE_IC_VERSION}.zip" \
+      && unzip -q /tmp/ic-basic.zip -d /opt/oracle \
+      && unzip -q /tmp/ic-tools.zip -d /opt/oracle \
+      && rm -f /tmp/ic-basic.zip /tmp/ic-tools.zip \
+      && mv /opt/oracle/instantclient_* /opt/oracle/instantclient \
+      && echo /opt/oracle/instantclient > /etc/ld.so.conf.d/oracle-instantclient.conf \
+      && ldconfig \
+      && apt-get purge -y --auto-remove unzip \
+      && rm -rf /var/lib/apt/lists/* \
+      && ! ldd /opt/oracle/instantclient/sqlldr | grep -q "not found"; \
+    fi
+
+# SQL*Loader runtime config (utilities guide B.5): client dir on PATH +
+# LD_LIBRARY_PATH, UTF-8 NLS. Harmless no-ops when WITH_ORACLE=false (the
+# directory simply doesn't exist).
+ENV PATH="/opt/oracle/instantclient:${PATH}" \
+    LD_LIBRARY_PATH="/opt/oracle/instantclient" \
+    NLS_LANG="AMERICAN_AMERICA.UTF8"
+
 # container defaults: bind 0.0.0.0 (127.0.0.1 would be unreachable behind
-# port mapping) and keep all state on the mounted volume
+# port mapping), keep all state on the mounted volume, and spill engine
+# temp files (sqlldr data/ctl files) to disk — /tmp is a tmpfs in the
+# hardened compose setup, RAM-backed, unsuitable for large loads
 ENV SLING_HOME_DIR=/var/lib/sling \
-    SLING_SERVER_HOST=0.0.0.0
+    SLING_SERVER_HOST=0.0.0.0 \
+    SLING_TEMP_DIR=/var/lib/sling/tmp
+RUN mkdir -p /var/lib/sling/tmp && chown sling:sling /var/lib/sling/tmp
 USER sling
 WORKDIR /var/lib/sling
 EXPOSE 5666

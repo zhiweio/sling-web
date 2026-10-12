@@ -113,7 +113,9 @@ specs (`e2e/specs/acceptance.yaml`).
 - **Docker Compose** (recommended for servers): `docker compose up -d --build`
   from the repo root — state persists in the `sling-data` volume; configure
   via a `.env` file (`SLING_SERVER_TOKEN`, `SLING_BIND`, `SLING_PORT`, `TZ`,
-  documented in `compose.yaml`)
+  documented in `compose.yaml`). Set `WITH_ORACLE=true` to bake in the
+  Oracle Instant Client for fast SQL*Loader bulk writes (without it, Oracle
+  writes use the built-in pure-Go loader)
 - **Docker**: `docker build -f Dockerfile.server -t sling-server . && docker run -p 5666:5666 -v sling-data:/var/lib/sling sling-server`
 - **systemd**: `deploy/sling-server.service`
 - **Releases**: `goreleaser --snapshot --clean` for a local all-platform

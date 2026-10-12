@@ -100,7 +100,7 @@ node e2e/ai/run-acceptance.mjs   # AI 验收(规格驱动,JUnit 报告)
 ## 部署
 
 - **单二进制**:解压即用(Windows 双击 / macOS 右键打开 / Linux 命令行)
-- **Docker Compose**(服务器推荐):仓库根目录 `docker compose up -d --build`,数据持久化在 `sling-data` 卷;用 `.env` 配置(`SLING_SERVER_TOKEN`、`SLING_BIND`、`SLING_PORT`、`TZ`,见 `compose.yaml` 头部说明)
+- **Docker Compose**(服务器推荐):仓库根目录 `docker compose up -d --build`,数据持久化在 `sling-data` 卷;用 `.env` 配置(`SLING_SERVER_TOKEN`、`SLING_BIND`、`SLING_PORT`、`TZ`,见 `compose.yaml` 头部说明)。设 `WITH_ORACLE=true` 可将 Oracle Instant Client 打进镜像,启用 SQL*Loader 批量写(不开启时走内置纯 Go 加载)
 - **Docker**:`docker build -f Dockerfile.server -t sling-server . && docker run -p 5666:5666 -v sling-data:/var/lib/sling sling-server`
 - **systemd**:`deploy/sling-server.service`
 - **发布**:`goreleaser --snapshot --clean` 本地全平台快照;CI 原生 OS 矩阵出正式产物(`.goreleaser.yml`)

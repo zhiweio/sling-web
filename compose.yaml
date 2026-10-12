@@ -16,6 +16,12 @@
 #   SLING_PORT          host port                        (default: 5666)
 #   TZ                  timezone for the cron scheduler  (default: UTC)
 #   VERSION             version string + image tag       (default: dev)
+#   WITH_ORACLE         true = bake Oracle SQL*Loader into the image at
+#                       build time (Instant Client Basic Light + Tools,
+#                       ~80MB) for fast Oracle bulk writes; without it,
+#                       Oracle writes use the built-in pure-Go loader.
+#                       Takes effect on the next build: after changing it,
+#                       run `docker compose up -d --build`.
 
 services:
   sling-server:
@@ -24,6 +30,7 @@ services:
       dockerfile: Dockerfile.server
       args:
         VERSION: ${VERSION:-dev}
+        WITH_ORACLE: ${WITH_ORACLE:-false}
     image: sling-server:${VERSION:-dev}
     restart: unless-stopped
     ports:
