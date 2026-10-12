@@ -3,6 +3,7 @@
 
 <p align="center" style="margin-bottom: 0px">Slings from a data source to a data target.</p>
 <p align="center">See <a href="https://docs.slingdata.io/">docs.slingdata.io</a> for more details.</p>
+<p align="center"><a href="README.zh-CN.md">简体中文</a></p>
 
 
 <p align="center">
@@ -73,6 +74,30 @@ Here are some additional links:
 - https://slingdata.io
 - https://docs.slingdata.io
 - https://blog.slingdata.io
+
+---
+
+## sling-server — Browser Workbench
+
+Besides the CLI, this repository ships **sling-server**: a browser-based data
+migration workbench packed into the same single binary (Go server + embedded
+React UI, built on the unmodified sling engine). It gives non-technical users
+the full journey — connections, a 5-step migration wizard, scheduling, live
+run monitoring, and governance (encrypted credential vault, notifications,
+audit log, backups) — with an English/Chinese bilingual UI.
+
+```bash
+just build-server              # build the single binary (frontend embedded)
+./cmd/sling-server/sling-server  # runs at http://127.0.0.1:5666
+```
+
+Highlights: 41 connector types via guided wizards, AES-256-GCM credential
+vault, cron scheduling, real-time SSE progress and log terminal, config
+versioning with rollback, YAML export that runs directly in the CLI, Docker
+and systemd deployment.
+
+See [server/README.md](server/README.md) for architecture, security model,
+and the full feature matrix.
 
 ---
 
@@ -205,7 +230,7 @@ If you're using the python wrapper, decompress the downloaded binary and put the
 
 ## Contributing
 
-We welcome contributions to improve Sling! Here are some guidelines to help you get started.
+We welcome contributions to improve Sling! See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide (development setup, test suites, PR process). Here is a summary to help you get started.
 
 ### Testing Guidelines
 
@@ -265,6 +290,14 @@ You can specify individual test numbers, ranges, or use the '+' suffix to run al
 3. **CLI Suite**: Tests command-line interface functionality.
    - Located in: `cmd/sling/sling_cli_test.go`
    - Configuration: `tests/suite.cli.yaml`
+
+4. **Workbench Suites** (sling-server): Go unit tests and full-stack
+   Playwright E2E tests against the real binary.
+   ```sh
+   just test-server    # server/ unit tests
+   just build-server   # prerequisite for e2e
+   just test-e2e       # Playwright suite (see e2e/README.md)
+   ```
 
 ### Adding New Tests
 
