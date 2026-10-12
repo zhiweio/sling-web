@@ -1,5 +1,6 @@
-// analyze.go — 运行前分析：对任务涉及的每张源表统计字段数/行数/存储，
-// 汇总总量并给出预计耗时与负载等级，帮助用户在运行前评估对源/目标的影响。
+// analyze.go — pre-run analysis: for every source table in a job, count
+// columns/rows/storage, aggregate totals, and estimate duration and load
+// level so users can assess the impact on source/target before running.
 package server
 
 import (
@@ -238,7 +239,7 @@ func analyzeTable(srcEntry connection.ConnEntry, object, target string, openTarg
 		sa.Rows = &n
 		if n >= largeTableRows {
 			sa.Warnings = append(sa.Warnings,
-				g.F("%s rows — 大表，建议低峰期运行 / large table, consider off-peak", humanize.Comma(n)))
+				g.F("%s rows — large table, consider running off-peak", humanize.Comma(n)))
 		}
 	}
 
@@ -247,7 +248,7 @@ func analyzeTable(srcEntry connection.ConnEntry, object, target string, openTarg
 		sa.SizeBytes = &n
 		if n >= largeTableBytes {
 			sa.Warnings = append(sa.Warnings,
-				g.F("%s — 大表，注意网络与磁盘负载 / large volume", humanize.Bytes(uint64(n))))
+				g.F("%s — large volume, mind network and disk load", humanize.Bytes(uint64(n))))
 		}
 	}
 
@@ -351,7 +352,7 @@ func analyzeFileObject(srcEntry connection.ConnEntry, object, target string) Str
 				}
 			}
 			if sa.Rows == nil && n >= 512*1024*1024 {
-				sa.Warnings = append(sa.Warnings, "文件较大，行数未统计（>512MB）")
+				sa.Warnings = append(sa.Warnings, "file is large, rows not counted (>512MB)")
 			}
 			return sa
 		}
@@ -376,7 +377,7 @@ func analyzeFileObject(srcEntry connection.ConnEntry, object, target string) Str
 	}
 	if count > 0 {
 		sa.SizeBytes = &total
-		sa.Warnings = append(sa.Warnings, g.F("%d 个文件 / %d files", count, count))
+		sa.Warnings = append(sa.Warnings, g.F("%d files", count))
 	} else {
 		sa.Error = "no files match " + object
 	}

@@ -86,7 +86,7 @@ func main() {
 	// (or the next few), open the browser to it and exit.
 	addr, existing := findFreePort("127.0.0.1", *port)
 	if existing != "" {
-		fmt.Printf("sling-server 已在运行 → %s\n", existing)
+		fmt.Printf("sling-server is already running → %s\n", existing)
 		if !*noOpen {
 			openBrowser(existing)
 		}
@@ -133,7 +133,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "server error: %s\n", err)
 		os.Exit(1)
 	case <-ctx.Done():
-		fmt.Println("\n正在停止… (Ctrl+C again to force)")
+		fmt.Println("\nShutting down… (Ctrl+C again to force)")
 		go func() {
 			<-ctx.Done()
 			os.Exit(130)
@@ -144,7 +144,7 @@ func main() {
 	defer cancel()
 	srv.Shutdown(shutdownCtx)
 	app.Shutdown()
-	fmt.Println("已安全退出。")
+	fmt.Println("Exited safely.")
 }
 
 // findFreePort tries port, port+1... port+9. If a port answers as an
@@ -194,37 +194,37 @@ func openBrowser(url string) {
 func printBanner(url string, hasToken bool) {
 	fmt.Println()
 	fmt.Println("  ┌─────────────────────────────────────────────┐")
-	fmt.Println("  │        sling-server 数据迁移工作台           │")
+	fmt.Println("  │     sling-server · Data Migration Workbench │")
 	fmt.Println("  └─────────────────────────────────────────────┘")
-	fmt.Printf("   ➜ 地址:  %s\n", url)
+	fmt.Printf("   ➜ URL:    %s\n", url)
 	if hasToken {
-		fmt.Println("   ➜ 鉴权:  已启用 token（请求需携带 Authorization: Bearer <token>）")
+		fmt.Println("   ➜ Auth:   token enabled (requests need Authorization: Bearer <token>)")
 	}
-	fmt.Printf("   ➜ 数据:  %s\n", env.HomeDir)
-	fmt.Println("   ➜ 退出:  Ctrl+C")
+	fmt.Printf("   ➜ Data:   %s\n", env.HomeDir)
+	fmt.Println("   ➜ Quit:   Ctrl+C")
 	fmt.Println()
 }
 
 func setVaultPassphrase() {
-	fmt.Print("设置保险库口令（输入不留痕，直接回车取消）: ")
+	fmt.Print("Set vault passphrase (input hidden, press Enter to cancel): ")
 	pass, err := readPassword()
 	if err != nil || pass == "" {
-		fmt.Println("已取消。")
+		fmt.Println("Cancelled.")
 		return
 	}
-	fmt.Print("再次输入以确认: ")
+	fmt.Print("Confirm passphrase: ")
 	pass2, _ := readPassword()
 	if pass != pass2 {
-		fmt.Println("两次输入不一致，已取消。")
+		fmt.Println("Passphrases do not match. Cancelled.")
 		os.Exit(1)
 	}
 
 	app, err := server.New(server.Options{Passphrase: pass, Version: version})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "失败: %s\n", err)
+		fmt.Fprintf(os.Stderr, "failed: %s\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("✓ 保险库已加密保存于 %s\n", env.HomeDir)
+	fmt.Printf("✓ Vault encrypted and saved at %s\n", env.HomeDir)
 	_ = app
 }
 

@@ -33,7 +33,7 @@ var notifyProviders = map[string]bool{
 var notifyEventTypes = []string{"run_success", "run_failed", "run_cancelled", "paused", "system"}
 
 // channelSecretPath is the vault path of a channel's signing secret
-// (DingTalk 加签 / Feishu 签名校验).
+// (DingTalk signed bots / Feishu signature verification).
 func channelSecretPath(id int64) string {
 	return g.F("notify/channel/%d/secret", id)
 }
@@ -246,7 +246,7 @@ func (a *App) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request) {
 	ev := &webhookEvent{
 		Event: "system",
 		Level: "info",
-		Title: "sling-server 测试消息 / Test message",
+		Title: "sling-server test message",
 		Body:  g.F("channel %q is configured correctly", ch.Name),
 		At:    time.Now().Format(time.RFC3339),
 	}
@@ -383,7 +383,7 @@ func feishuSign(secret string, ts int64) string {
 }
 
 // signDingTalkURL appends the timestamp+sign query params required by
-// DingTalk "加签" bots: sign = url-escape(base64(hmac-sha256(secret, "<ts>\n<secret>"))).
+// DingTalk signed bots ("加签"): sign = url-escape(base64(hmac-sha256(secret, "<ts>\n<secret>"))).
 func signDingTalkURL(rawURL, secret string) string {
 	ts := time.Now().UnixMilli()
 	sign := base64.StdEncoding.EncodeToString(hmacSha256([]byte(secret), []byte(g.F("%d\n%s", ts, secret))))

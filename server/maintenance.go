@@ -123,7 +123,7 @@ func (m *Maintenance) pruneOnce() {
 	if m.notify != nil {
 		if today := time.Now().Format("2006-01-02"); today != m.lastNotified {
 			m.lastNotified = today
-			m.notify.System("info", "自动清理完成 / Retention prune", summary)
+			m.notify.System("info", "Retention prune complete", summary)
 		}
 	}
 }
@@ -157,7 +157,7 @@ func (m *Maintenance) autoBackup() {
 		g.Warn("automatic backup failed: %s", err)
 		m.db.Audit("backup", "backup", "", "auto backup failed: "+err.Error())
 		if m.notify != nil {
-			m.notify.System("error", "自动备份失败 / Auto backup failed", err.Error())
+			m.notify.System("error", "Automatic backup failed", err.Error())
 		}
 		return
 	}
