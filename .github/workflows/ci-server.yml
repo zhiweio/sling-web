@@ -1,0 +1,146 @@
+# CI for the sling-server workbench (server, web UI, e2e).
+# The upstream CLI workflows (build-test.yml etc.) run on self-hosted
+# runners and are untouched; this workflow uses GitHub-hosted runners.
+name: Workbench CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "web/**"
+      - "e2e/**"
+      - "cmd/sling-server/**"
+      - "justfile"
+      - ".github/workflows/ci-server.yml"
+  pull_request:
+    paths:
+      - "server/**"
+      - "web/**"
+      - "e2e/**"
+      - "cmd/sling-server/**"
+      - "justfile"
+      - ".github/workflows/ci-server.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web (i18n + typecheck + lint + build)
+    runs-on: ubuntu-latest
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check i18n key parity (en / zh-CN)
+        run: node scripts/check-i18n.mjs
+
+      - name: Type check
+        run: npx tsc -b
+
+      - name: Lint (oxlint)
+        run: pnpm run lint
+
+      - name: Build
+        run: pnpm run build
+
+  lint:
+    name: Go lint (server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.6
+          args: ./server/... ./cmd/sling-server/...
+
+  server-test:
+    name: Server unit tests
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: go vet
+        run: go vet ./server/... ./cmd/sling-server/...
+
+      - name: go test
+        run: go test -count=1 -timeout 600s ./server/... ./cmd/sling-server/...
+
+  build-and-e2e:
+    name: Build binary + Playwright E2E
+    runs-on: ubuntu-latest
+    needs: [web]
+    env:
+      CGO_ENABLED: "1"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        run: corepack enable
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build frontend
+        run: pnpm --dir web install --frozen-lockfile && pnpm --dir web run build
+
+      - name: Build sling-server binary
+        run: go build -p 1 -ldflags="-s -w" -o cmd/sling-server/sling-server ./cmd/sling-server
+
+      - name: Run Playwright E2E
+        run: cd e2e && npm ci && npx playwright install --with-deps chromium && npx playwright test
+
+      - name: Upload binary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sling-server-linux-amd64
+          path: cmd/sling-server/sling-server
+          if-no-files-found: warn
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          if-no-files-found: ignore
