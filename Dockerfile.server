@@ -64,10 +64,13 @@ RUN if [ "$WITH_ORACLE" = "true" ]; then \
         arm64) ic_arch=arm64 ;; \
         *) echo "WITH_ORACLE=true: unsupported architecture ${TARGETARCH}" >&2; exit 1 ;; \
       esac \
-      && ic_dir="$(echo "$ORACLE_IC_VERSION" | awk -F. '{print $1 $2 "0000"}')" \
+      && ic_major="${ORACLE_IC_VERSION%%.*}" \
+      && ic_minor="${ORACLE_IC_VERSION#*.}" \
+      && ic_minor="${ic_minor%%.*}" \
+      && ic_dir="$(printf '%-7s' "${ic_major}${ic_minor}" | tr ' ' 0)" \
       && ic_base="https://download.oracle.com/otn_software/linux/instantclient/${ic_dir}" \
       && apt-get update \
-      && apt-get install -y --no-install-recommends unzip awk libaio1 \
+      && apt-get install -y --no-install-recommends unzip libaio1 \
       && mkdir -p /opt/oracle \
       && curl -fsSL -o /tmp/ic-basic.zip "${ic_base}/instantclient-basiclite-linux.${ic_arch}-${ORACLE_IC_VERSION}.zip" \
       && curl -fsSL -o /tmp/ic-tools.zip "${ic_base}/instantclient-tools-linux.${ic_arch}-${ORACLE_IC_VERSION}.zip" \
