@@ -74,8 +74,8 @@ RUN if [ "$WITH_ORACLE" = "true" ]; then \
       && mkdir -p /opt/oracle \
       && curl -fsSL -o /tmp/ic-basic.zip "${ic_base}/instantclient-basiclite-linux.${ic_arch}-${ORACLE_IC_VERSION}.zip" \
       && curl -fsSL -o /tmp/ic-tools.zip "${ic_base}/instantclient-tools-linux.${ic_arch}-${ORACLE_IC_VERSION}.zip" \
-      && unzip -q /tmp/ic-basic.zip -d /opt/oracle \
-      && unzip -q /tmp/ic-tools.zip -d /opt/oracle \
+      && unzip -oq /tmp/ic-basic.zip -d /opt/oracle \
+      && unzip -oq /tmp/ic-tools.zip -d /opt/oracle \
       && rm -f /tmp/ic-basic.zip /tmp/ic-tools.zip \
       && mv /opt/oracle/instantclient_* /opt/oracle/instantclient \
       && echo /opt/oracle/instantclient > /etc/ld.so.conf.d/oracle-instantclient.conf \
