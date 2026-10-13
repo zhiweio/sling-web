@@ -35,13 +35,15 @@ function SseBridge() {
 
   useSSE({
     onExecution: (snap: RunSnapshot) => {
-      qc.setQueriesData<{ runs: (RunSnapshot & { id?: string })[] }>({ queryKey: ["runs"] }, (old) =>
+      // list rows are RunRecords keyed by `id`; snapshots use `run_id`.
+      // Normalize on merge so every cached row keeps an `id` to navigate by.
+      qc.setQueriesData<{ runs: (RunSnapshot & { id: string })[] }>({ queryKey: ["runs"] }, (old) =>
         old
           ? {
               ...old,
-              runs: old.runs.some((r) => r.run_id === snap.run_id)
-                ? old.runs.map((r) => (r.run_id === snap.run_id ? snap : r))
-                : [snap, ...old.runs].slice(0, 200),
+              runs: old.runs.some((r) => r.id === snap.run_id)
+                ? old.runs.map((r) => (r.id === snap.run_id ? { ...r, ...snap, id: r.id } : r))
+                : [{ ...snap, id: snap.run_id }, ...old.runs].slice(0, 200),
             }
           : old,
       )
