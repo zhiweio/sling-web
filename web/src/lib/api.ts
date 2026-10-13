@@ -34,6 +34,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await resp.text()
   const body = text ? JSON.parse(text) : {}
   if (!resp.ok) {
+    // an expired/invalid session anywhere in the app re-probes the session,
+    // which routes the user to the login page (auth endpoints excluded so the
+    // login form itself can surface its own 401)
+    if (resp.status === 401 && !path.startsWith("/auth/")) {
+      window.dispatchEvent(new Event("sling:unauthorized"))
+    }
     throw new ApiError(body.error ?? `HTTP ${resp.status}`, resp.status, body)
   }
   return body as T
@@ -41,13 +47,29 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export class ApiError extends Error {
   status: number
-  constructor(msg: string, status: number, _body: unknown) {
+  body: Record<string, unknown>
+  constructor(msg: string, status: number, body?: unknown) {
     super(msg)
     this.status = status
+    this.body = (body ?? {}) as Record<string, unknown>
   }
 }
 
+export interface SessionInfo {
+  authenticated: boolean
+  username?: string
+  must_change_password?: boolean
+}
+
 export const api = {
+  /* auth */
+  session: () => req<SessionInfo>("/auth/session"),
+  login: (username: string, password: string) =>
+    req<SessionInfo>("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  logout: () => req<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+  changePassword: (current_password: string, new_password: string) =>
+    req<{ ok: boolean }>("/auth/password", { method: "POST", body: JSON.stringify({ current_password, new_password }) }),
+
   /* misc */
   stats: () => req<Stats>("/stats"),
   version: () => req<Record<string, string>>("/version"),

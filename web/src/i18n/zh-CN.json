@@ -322,6 +322,8 @@
   "settings": {
     "title": "设置",
     "subtitle": "偏好与数据管理",
+    "account": "账号",
+    "accountRole": "管理员",
     "language": "界面语言",
     "theme": "主题",
     "themeLight": "浅色",
@@ -517,6 +519,7 @@
       "duplicate": "复制",
       "backup": "备份",
       "prune": "清理",
+      "login": "登录",
       "misfire": "误触发跳过"
     },
     "entity": {
@@ -525,7 +528,38 @@
       "setting": "设置",
       "run": "运行",
       "channel": "通知渠道",
-      "backup": "备份"
+      "backup": "备份",
+      "admin": "管理员"
     }
+  },
+  "auth": {
+    "signIn": "登录",
+    "signInSub": "使用管理员账号访问工作台",
+    "username": "用户名",
+    "password": "密码",
+    "showPassword": "显示密码",
+    "hidePassword": "隐藏密码",
+    "signingIn": "登录中…",
+    "invalidCredentials": "用户名或密码错误",
+    "lockedOut": "失败次数过多，请 {{seconds}} 秒后重试",
+    "tagline": "在浏览器中完成数据库与文件之间的抽取与加载。",
+    "pointConnections": "集中管理所有数据源连接",
+    "pointPipelines": "无需手写 YAML 即可设计迁移管道",
+    "pointMonitor": "实时监控运行状态与日志",
+    "panelFooter": "sling-server · 自托管数据迁移工作台",
+    "changePassword": "修改密码",
+    "changePasswordSub": "为管理员账号设置新密码",
+    "currentPassword": "当前密码",
+    "newPassword": "新密码",
+    "confirmPassword": "确认新密码",
+    "passwordTooShort": "密码长度至少 8 个字符",
+    "passwordMismatch": "两次输入的密码不一致",
+    "changing": "保存中…",
+    "passwordChanged": "密码已修改",
+    "passwordChangeFailed": "修改密码失败",
+    "mustChangeNotice": "当前部署仍在使用默认密码，请设置新密码后继续。",
+    "logout": "退出登录",
+    "signedOut": "已退出登录",
+    "account": "账号"
   }
 }

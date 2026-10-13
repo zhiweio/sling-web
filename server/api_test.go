@@ -3,7 +3,6 @@ package server
 import (
 	"bufio"
 	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -216,7 +215,7 @@ func TestPrune(t *testing.T) {
 func newTestApp(t *testing.T) *App {
 	t.Helper()
 	dir := testEnv(t)
-	app, err := New(Options{DBPath: dir + "\\test.db", Concurrency: 2})
+	app, err := New(Options{DBPath: dir + "\\test.db", Concurrency: 2, AdminPassword: testAdminPass})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -287,7 +286,7 @@ func TestAPIJobsCRUDAndValidation(t *testing.T) {
 
 func TestAPITokenAuth(t *testing.T) {
 	dir := testEnv(t)
-	app, err := New(Options{DBPath: dir + "\\test.db", Token: "sekrit"})
+	app, err := New(Options{DBPath: dir + "\\test.db", Token: "sekrit", AdminPassword: testAdminPass})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,13 +294,25 @@ func TestAPITokenAuth(t *testing.T) {
 	ts := httptest.NewServer(app.Handler())
 	defer ts.Close()
 
-	resp, _ := apiGet(t, ts.URL, "/api/health")
-	if resp != 401 {
-		t.Fatalf("no token = %d, want 401", resp)
+	// health stays exempt: the docker healthcheck and the instance probe
+	// hold no credentials
+	if resp, _, _ := doBare(t, "GET", ts.URL+"/api/health", "", nil); resp != 200 {
+		t.Fatalf("health without credentials = %d, want 200 (exempt)", resp)
 	}
-	resp, _ = apiGetAuth(t, ts.URL, "/api/health", "sekrit")
-	if resp != 200 {
+	// everything else needs the bearer token or a session
+	if resp, _, _ := doBare(t, "GET", ts.URL+"/api/version", "", nil); resp != 401 {
+		t.Fatalf("no credentials = %d, want 401", resp)
+	}
+	if resp, _ := apiGetAuth(t, ts.URL, "/api/version", "sekrit"); resp != 200 {
 		t.Fatalf("with token = %d, want 200", resp)
+	}
+	// wrong token rejected
+	if resp, _, _ := doBare(t, "GET", ts.URL+"/api/version", "", map[string]string{"Authorization": "Bearer nope"}); resp != 401 {
+		t.Fatalf("wrong token = %d, want 401", resp)
+	}
+	// a session cookie works alongside the token
+	if resp, _ := apiGet(t, ts.URL, "/api/version"); resp != 200 {
+		t.Fatalf("with session = %d, want 200", resp)
 	}
 }
 
@@ -428,7 +439,9 @@ func TestSSEEventsStreamThroughMiddleware(t *testing.T) {
 	ts := httptest.NewServer(app.Handler())
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/events")
+	// the stream is cookie-authenticated like every other endpoint
+	client := authedClient(t, ts.URL)
+	resp, err := client.Get(ts.URL + "/api/events")
 	if err != nil {
 		t.Fatal(err)
 	}

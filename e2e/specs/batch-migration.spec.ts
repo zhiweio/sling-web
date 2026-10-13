@@ -3,7 +3,7 @@
 // Every test idempotently creates its own connections (Playwright restarts
 // the worker with a fresh server instance after a test timeout, so state
 // from earlier tests cannot be relied upon).
-import { test, expect, type Page } from "../helpers/env"
+import { test, expect, type Page, E2E_API_TOKEN } from "../helpers/env"
 import { DatabaseSync } from "node:sqlite"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
@@ -32,7 +32,7 @@ async function ensureBatchConns(slingUrl: string, dataDir: string) {
   ] as const) {
     const resp = await fetch(`${slingUrl}/api/conns`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_API_TOKEN}` },
       body: JSON.stringify({
         name,
         type: "sqlite",
@@ -141,7 +141,9 @@ test.describe("batch multi-table migration", () => {
 
     // Verify the saved spec via the API: all 3 streams carry explicit ods_
     // target names
-    const resp = await fetch(`${slingUrl}/api/jobs?q=e2e-batch-naming`)
+    const resp = await fetch(`${slingUrl}/api/jobs?q=e2e-batch-naming`, {
+      headers: { Authorization: `Bearer ${E2E_API_TOKEN}` },
+    })
     const body = await resp.json()
     const job = body.jobs?.[0]
     expect(job).toBeTruthy()

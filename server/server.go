@@ -17,7 +17,9 @@ import (
 type Options struct {
 	DBPath            string
 	Passphrase        string
-	Token             string // optional bearer token (LAN deployments)
+	Token             string // optional bearer token for API clients (scripts, healthchecks)
+	AdminUsername     string // admin account name (default "admin")
+	AdminPassword     string // admin password set at deploy time; empty = keep stored or seed default
 	Concurrency       int    // worker pool size (default 4)
 	StreamConcurrency int    // replication stream parallelism (default 1)
 	RetentionDays     int    // run/log retention (0 = keep forever)
@@ -36,6 +38,9 @@ type App struct {
 	Scheduler   *Scheduler
 	Notifier    *Notifier
 	Maintenance *Maintenance
+	Sessions    *sessionStore
+
+	LoginThrottle *loginThrottle
 
 	Opt Options
 
@@ -64,18 +69,24 @@ func New(opt Options) (*App, error) {
 	maintenance := NewMaintenance(db, notifier, opt.RetentionDays)
 
 	app := &App{
-		DB:          db,
-		Vault:       vault,
-		Conns:       conns,
-		Broker:      broker,
-		Router:      router,
-		Runner:      runner,
-		Executor:    executor,
-		Scheduler:   scheduler,
-		Notifier:    notifier,
-		Maintenance: maintenance,
-		Opt:         opt,
-		startedAt:   time.Now(),
+		DB:            db,
+		Vault:         vault,
+		Conns:         conns,
+		Broker:        broker,
+		Router:        router,
+		Runner:        runner,
+		Executor:      executor,
+		Scheduler:     scheduler,
+		Notifier:      notifier,
+		Maintenance:   maintenance,
+		Sessions:      newSessionStore(),
+		LoginThrottle: &loginThrottle{},
+		Opt:           opt,
+		startedAt:     time.Now(),
+	}
+	// ensure the admin account exists before any request can reach the API
+	if err := app.bootstrapAdmin(); err != nil {
+		return nil, err
 	}
 	return app, nil
 }
@@ -121,6 +132,12 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", a.handleHealth)
 	mux.HandleFunc("GET /api/version", a.handleVersion)
 	mux.HandleFunc("GET /api/stats", a.handleStats)
+
+	// auth
+	mux.HandleFunc("POST /api/auth/login", a.handleLogin)
+	mux.HandleFunc("GET /api/auth/session", a.handleSession)
+	mux.HandleFunc("POST /api/auth/logout", a.handleLogout)
+	mux.HandleFunc("POST /api/auth/password", a.handlePassword)
 
 	// SSE
 	mux.Handle("GET /api/events", a.Broker)
@@ -237,15 +254,25 @@ func (a *App) middleware(next http.Handler) http.Handler {
 			}
 		}()
 
-		// optional token auth
-		if a.Opt.Token != "" {
-			got := r.Header.Get("Authorization")
-			got = strings.TrimPrefix(got, "Bearer ")
-			if got == "" {
-				got = r.URL.Query().Get("token")
+		// authentication: session cookie (browser) or bearer token (API
+		// clients). Exempt paths let the SPA shell load, logins start and
+		// health checks answer without credentials.
+		if !authExempt(r) {
+			sess := a.sessionFrom(r)
+			tokenOK := a.Opt.Token != "" && bearerToken(r) == a.Opt.Token
+			if sess == nil && !tokenOK {
+				writeErr(rec, http.StatusUnauthorized, "authentication required")
+				return
 			}
-			if got != a.Opt.Token {
-				writeErr(rec, http.StatusUnauthorized, "invalid or missing token")
+			// a session that still owes a password change may only change it
+			// (or log out / probe itself); bearer-token calls are exempt
+			if sess != nil && sess.MustChange && !authMustChangeAllowed(r) {
+				writeErr(rec, http.StatusForbidden, "password change required")
+				return
+			}
+			// CSRF defense-in-depth for cookie-authenticated mutations
+			if sess != nil && crossSiteMutation(r) {
+				writeErr(rec, http.StatusForbidden, "cross-site request rejected")
 				return
 			}
 		}

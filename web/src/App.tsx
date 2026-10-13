@@ -1,11 +1,14 @@
 import { lazy, Suspense, useEffect } from "react"
-import { Navigate, Route, Routes, useLocation } from "react-router-dom"
-import { useQueryClient } from "@tanstack/react-query"
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { AppShell } from "@/components/layout/app-shell"
+import { api } from "@/lib/api"
 import { useSSE } from "@/lib/sse"
 import type { RunSnapshot } from "@/lib/types"
 import i18n from "@/i18n"
 import { Toaster } from "@/components/ui/sonner"
+import { Login } from "@/features/auth/login"
+import { ChangePassword } from "@/features/auth/change-password"
 
 const Dashboard = lazy(() => import("@/features/dashboard"))
 const Connections = lazy(() => import("@/features/connections"))
@@ -17,7 +20,7 @@ const Notifications = lazy(() => import("@/features/notifications"))
 const Audit = lazy(() => import("@/features/audit"))
 const Settings = lazy(() => import("@/features/settings"))
 
-function Loading() {
+export function Loading() {
   return (
     <div className="flex h-[50vh] items-center justify-center text-muted-foreground">
       <div className="size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -60,6 +63,7 @@ function SseBridge() {
       qc.invalidateQueries({ queryKey: ["job"] })
       qc.invalidateQueries({ queryKey: ["stats"] })
     },
+    onError: () => qc.invalidateQueries({ queryKey: ["session"] }),
   })
 
   useEffect(() => {
@@ -72,28 +76,73 @@ function SseBridge() {
   return null
 }
 
-export default function App() {
+/** Any 401 from the API client re-probes the session; the guard below reacts */
+function UnauthorizedBridge() {
+  const qc = useQueryClient()
+  useEffect(() => {
+    const handler = () => qc.invalidateQueries({ queryKey: ["session"] })
+    window.addEventListener("sling:unauthorized", handler)
+    return () => window.removeEventListener("sling:unauthorized", handler)
+  }, [qc])
+  return null
+}
+
+/** Gate every workbench route behind the session probe */
+function RequireAuth() {
+  const location = useLocation()
+  const { data, isPending } = useQuery({
+    queryKey: ["session"],
+    queryFn: () => api.session(),
+    staleTime: 60_000,
+  })
+
+  if (isPending) return <Loading />
+  if (!data?.authenticated) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  // a session that still carries the default password must change it first
+  if (data.must_change_password && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />
+  }
+  return <Outlet />
+}
+
+/** Authenticated routes inside the workbench shell */
+function ShellLayout() {
   return (
     <AppShell>
       <SseBridge />
       <Suspense fallback={<Loading />}>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/connections" element={<Connections />} />
-          <Route path="/connections/:name" element={<Connections />} />
-          <Route path="/jobs" element={<Jobs />} />
-          <Route path="/jobs/new" element={<JobEditor />} />
-          <Route path="/jobs/:id/edit" element={<JobEditor />} />
-          <Route path="/jobs/:id" element={<JobEditor />} />
-          <Route path="/runs" element={<Runs />} />
-          <Route path="/runs/:id" element={<RunDetail />} />
-          <Route path="/notifications" element={<Notifications />} />
-          <Route path="/audit" element={<Audit />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Outlet />
       </Suspense>
-      <Toaster position="top-center" richColors />
     </AppShell>
+  )
+}
+
+export default function App() {
+  return (
+    <>
+      <UnauthorizedBridge />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route element={<RequireAuth />}>
+          <Route path="/change-password" element={<ChangePassword />} />
+          <Route element={<ShellLayout />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/connections" element={<Connections />} />
+            <Route path="/connections/:name" element={<Connections />} />
+            <Route path="/jobs" element={<Jobs />} />
+            <Route path="/jobs/new" element={<JobEditor />} />
+            <Route path="/jobs/:id/edit" element={<JobEditor />} />
+            <Route path="/jobs/:id" element={<JobEditor />} />
+            <Route path="/runs" element={<Runs />} />
+            <Route path="/runs/:id" element={<RunDetail />} />
+            <Route path="/notifications" element={<Notifications />} />
+            <Route path="/audit" element={<Audit />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Route>
+      </Routes>
+      <Toaster position="top-center" richColors />
+    </>
   )
 }

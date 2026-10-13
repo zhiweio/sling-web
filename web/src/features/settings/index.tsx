@@ -1,11 +1,13 @@
-// Settings: language / theme / notifications / retention / backup / about
+// Settings: account / language / theme / notifications / retention / backup / about
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { HardDrive } from "lucide-react"
+import { HardDrive, KeyRound } from "lucide-react"
 import { api } from "@/lib/api"
 import { setLang } from "@/i18n"
 import { PageHeader } from "@/features/dashboard"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useUi } from "@/store/ui"
@@ -15,9 +17,11 @@ import { BackupCard } from "./backup-card"
 
 export default function Settings() {
   const { t, i18n } = useTranslation()
+  const navigate = useNavigate()
   const { theme, setTheme } = useUi()
   const [lang, setLangState] = useState(i18n.language)
   const { data: version } = useQuery({ queryKey: ["version"], queryFn: api.version })
+  const { data: session } = useQuery({ queryKey: ["session"], queryFn: () => api.session() })
 
   useEffect(() => {
     document.title = i18n.t("app.docTitle")
@@ -26,6 +30,27 @@ export default function Settings() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader title={t("settings.title")} subtitle={t("settings.subtitle")} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t("settings.account")}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
+              {(session?.username ?? "?")[0].toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium">{session?.username ?? "-"}</div>
+              <div className="text-xs text-muted-foreground">{t("settings.accountRole")}</div>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => navigate("/change-password")}>
+            <KeyRound className="size-4" />
+            {t("auth.changePassword")}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

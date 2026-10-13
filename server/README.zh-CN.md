@@ -53,7 +53,8 @@ just dev        # 终端 2: go run -tags dev ./cmd/sling-server
 
 ## 安全模型
 
-- 默认仅绑定 `127.0.0.1`;局域网部署请加 `--token <随机串>`(Bearer 鉴权)。Docker 容器内进程绑定 `0.0.0.0`(`SLING_SERVER_HOST`),`compose.yaml` 默认宿主侧端口仍只监听 `127.0.0.1`,需改 `SLING_BIND` 才对外
+- 登录始终强制:单一管理员账号保护 UI 与 API。部署时未配置密码则播种默认 `admin/admin`,首次登录强制修改;通过 `--admin-password <密码>`(环境变量 `SLING_SERVER_ADMIN_PASSWORD`,用户名 `--admin-user` / `SLING_SERVER_ADMIN_USER`)可在部署时固定凭据。忘记密码可用 `--set-admin-password` 交互式重置
+- `--token <随机串>` 仍可作为 API 客户端(脚本、健康检查)的 Bearer 凭据。Docker 容器内进程绑定 `0.0.0.0`(`SLING_SERVER_HOST`),`compose.yaml` 默认宿主侧端口仍只监听 `127.0.0.1`,需改 `SLING_BIND` 才对外
 - 连接凭据:AES-256-GCM 加密存储于 `~/.sling/server.db`,主密钥独立存放于 `~/.sling/server.key`(0600)
 - 可选 `--set-passphrase` 用口令包裹主密钥(Argon2id)
 - 日志自动脱敏(复用引擎 `RedactLogLine`);API 从不返回明文密码
@@ -62,8 +63,9 @@ just dev        # 终端 2: go run -tags dev ./cmd/sling-server
 
 ```
 sling-server [--port 5666] [--host 127.0.0.1] [--workdir ~/.sling] [--no-open]
-             [--token SECRET] [--concurrency 4] [--stream-concurrency 1]
-             [--retention 90] [--set-passphrase]
+             [--token SECRET] [--admin-user admin] [--admin-password SECRET]
+             [--concurrency 4] [--stream-concurrency 1] [--retention 90]
+             [--set-passphrase] [--set-admin-password]
 sling-server version
 ```
 

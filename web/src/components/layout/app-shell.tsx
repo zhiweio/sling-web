@@ -1,25 +1,37 @@
 // Dark sidebar + content layout (Linear style)
 import { useEffect, useState } from "react"
-import { NavLink, Link, useLocation } from "react-router-dom"
+import { NavLink, Link, useLocation, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Activity,
   ArrowRightLeft,
   Bell,
   Database,
+  KeyRound,
   LayoutDashboard,
+  LogOut,
   Menu,
   Moon,
   ScrollText,
   Settings as SettingsIcon,
   Sun,
+  UserRound,
   X,
 } from "lucide-react"
+import { toast } from "sonner"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useUi } from "@/store/ui"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { relativeTime } from "@/lib/format"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -66,6 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex-1" />
           <NotificationBell open={notifOpen} onOpenChange={setNotifOpen} />
           <ThemeToggle />
+          <UserMenu />
         </header>
 
         <main className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
@@ -168,6 +181,53 @@ function ThemeToggle() {
     <Button variant="ghost" size="icon" onClick={() => setTheme(next)} title="theme">
       {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
     </Button>
+  )
+}
+
+function UserMenu() {
+  const { t } = useTranslation()
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const { data: session } = useQuery({ queryKey: ["session"], queryFn: () => api.session() })
+  const username = session?.username ?? t("auth.account")
+
+  const logout = useMutation({
+    mutationFn: () => api.logout(),
+    onSettled: () => {
+      // flip the live session first (the auth guard sees it and routes to
+      // /login), then drop all cached server state. Never qc.clear() here:
+      // it orphans mounted query observers and the guard misses the change.
+      qc.setQueryData(["session"], { authenticated: false })
+      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" })
+      toast.success(t("auth.signedOut"))
+    },
+  })
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="size-8 rounded-full" title={username}>
+          <span className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+            {(username[0] ?? "?").toUpperCase()}
+          </span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel className="flex items-center gap-2">
+          <UserRound className="size-3.5 text-muted-foreground" />
+          <span className="truncate">{username}</span>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => navigate("/change-password")}>
+          <KeyRound className="size-4" />
+          {t("auth.changePassword")}
+        </DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onClick={() => logout.mutate()} disabled={logout.isPending}>
+          <LogOut className="size-4" />
+          {t("auth.logout")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

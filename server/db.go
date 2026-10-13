@@ -91,6 +91,7 @@ func (db *DB) Migrate() error {
 		&SchemaSnapshot{},
 		&Notification{},
 		&NotifyChannel{},
+		&AdminUser{},
 	}
 	for _, t := range tables {
 		if err := db.AutoMigrate(t); err != nil {
@@ -346,6 +347,16 @@ type NotifyChannel struct {
 func (c NotifyChannel) Events() (events []string) {
 	json.Unmarshal([]byte(c.EventsJSON), &events)
 	return
+}
+
+// AdminUser is the single administrator account of the workbench. Only the
+// bcrypt hash is persisted — plaintext passwords never touch disk.
+type AdminUser struct {
+	Username           string    `json:"username" gorm:"primaryKey;size:190"`
+	PasswordHash       string    `json:"-" gorm:"size:255"`
+	MustChangePassword bool      `json:"must_change_password" gorm:"column:must_change_password"`
+	CreatedAt          time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt          time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 /* ------------------------------- Queries --------------------------------- */

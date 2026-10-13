@@ -3,7 +3,8 @@
 //
 // Usage:
 //
-//	sling-server serve [--port 5666] [--host 127.0.0.1] [--workdir DIR] [--no-open] [--token T]
+//	sling-server serve [--port 5666] [--host 127.0.0.1] [--workdir DIR] [--no-open]
+//	                   [--token T] [--admin-user U] [--admin-password P]
 //	sling-server version
 package main
 
@@ -44,10 +45,13 @@ func main() {
 	workdir := fs.String("workdir", "", "data directory (default ~/.sling)")
 	noOpen := fs.Bool("no-open", false, "do not open the browser on start")
 	token := fs.String("token", os.Getenv("SLING_SERVER_TOKEN"), "bearer token protecting the API (for LAN use; env SLING_SERVER_TOKEN)")
+	adminUser := fs.String("admin-user", envOr("SLING_SERVER_ADMIN_USER", server.DefaultAdminUser), "admin account name (env SLING_SERVER_ADMIN_USER)")
+	adminPass := fs.String("admin-password", os.Getenv("SLING_SERVER_ADMIN_PASSWORD"), "admin password; empty = keep stored or seed admin/admin with a forced change at first login (env SLING_SERVER_ADMIN_PASSWORD)")
 	concurrency := fs.Int("concurrency", 4, "max concurrently running jobs")
 	streamConcurrency := fs.Int("stream-concurrency", 1, "replication stream parallelism")
 	retention := fs.Int("retention", 90, "days to keep run history & logs (0 = forever)")
 	setPassphrase := fs.Bool("set-passphrase", false, "interactively set/replace the vault passphrase")
+	setAdminPass := fs.Bool("set-admin-password", false, "interactively set/replace the admin password")
 	fs.Parse(os.Args[1:])
 
 	// data dir: must be set before env caches paths
@@ -66,11 +70,18 @@ func main() {
 		return
 	}
 
+	if *setAdminPass {
+		setAdminPassword(*adminUser)
+		return
+	}
+
 	// server mode: no terminal progress bars, quieter engine logs
 	slingShowProgressOff()
 
 	opts := server.Options{
 		Token:             *token,
+		AdminUsername:     *adminUser,
+		AdminPassword:     *adminPass,
 		Concurrency:       *concurrency,
 		StreamConcurrency: *streamConcurrency,
 		RetentionDays:     *retention,
@@ -110,7 +121,7 @@ func main() {
 			errCh <- err
 			return
 		}
-		printBanner(fmt.Sprintf("http://%s", listener.Addr().String()), *token != "")
+		printBanner(fmt.Sprintf("http://%s", listener.Addr().String()), *adminUser, app.HasDefaultCredentials())
 		if err = srv.Serve(listener); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}
@@ -192,14 +203,16 @@ func openBrowser(url string) {
 	}
 }
 
-func printBanner(url string, hasToken bool) {
+func printBanner(url, adminUser string, defaultCreds bool) {
 	fmt.Println()
 	fmt.Println("  ┌─────────────────────────────────────────────┐")
 	fmt.Println("  │     sling-server · Data Migration Workbench │")
 	fmt.Println("  └─────────────────────────────────────────────┘")
 	fmt.Printf("   ➜ URL:    %s\n", url)
-	if hasToken {
-		fmt.Println("   ➜ Auth:   token enabled (requests need Authorization: Bearer <token>)")
+	if defaultCreds {
+		fmt.Printf("   ➜ Login:  %s / %s (default password; a change is required at first login)\n", adminUser, server.DefaultAdminPass)
+	} else {
+		fmt.Printf("   ➜ Login:  %s\n", adminUser)
 	}
 	fmt.Printf("   ➜ Data:   %s\n", env.HomeDir)
 	fmt.Println("   ➜ Quit:   Ctrl+C")
@@ -226,6 +239,40 @@ func setVaultPassphrase() {
 		os.Exit(1)
 	}
 	fmt.Printf("✓ Vault encrypted and saved at %s\n", env.HomeDir)
+	_ = app
+}
+
+// setAdminPassword interactively sets the admin password (--set-admin-password),
+// the recovery path when the password is lost and no env var is set.
+func setAdminPassword(user string) {
+	if user == "" {
+		user = server.DefaultAdminUser
+	}
+	fmt.Printf("Set admin password for '%s' (input hidden, press Enter to cancel): ", user)
+	pass, err := readPassword()
+	if err != nil || pass == "" {
+		fmt.Println("Cancelled.")
+		return
+	}
+	if len(pass) < 8 {
+		fmt.Println("Password must be at least 8 characters. Cancelled.")
+		os.Exit(1)
+	}
+	fmt.Print("Confirm password: ")
+	pass2, _ := readPassword()
+	if pass != pass2 {
+		fmt.Println("Passwords do not match. Cancelled.")
+		os.Exit(1)
+	}
+
+	app, err := server.New(server.Options{AdminUsername: user, AdminPassword: pass, Version: version})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed: %s\n", err)
+		os.Exit(1)
+	}
+	// sessions are in-memory per process; restarting the running server
+	// invalidates any sessions issued under the old credential
+	fmt.Printf("✓ Admin password updated at %s (restart sling-server to apply)\n", env.HomeDir)
 	_ = app
 }
 

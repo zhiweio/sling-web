@@ -1,6 +1,9 @@
 // Test environment: launches the real sling-server binary (random port +
-// temporary data directory).
-import { test as base, expect } from "@playwright/test"
+// temporary data directory). Auth is always on: the shared instance runs
+// with a deploy-time admin password (no forced change in the main specs);
+// the login journey gets its own default-credentialed instance in
+// specs/login.spec.ts.
+import { test as base, expect, type Page } from "@playwright/test"
 import { spawn, type ChildProcess } from "node:child_process"
 import { mkdtempSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from "node:fs"
 import { createWriteStream } from "node:fs"
@@ -11,6 +14,9 @@ import { fileURLToPath } from "node:url"
 // package.json sets "type":"module" so Playwright compiles as ESM and
 // __dirname does not exist; derive it from the module URL instead.
 const thisDir = fileURLToPath(new URL(".", import.meta.url))
+
+export const E2E_ADMIN_PASS = "e2e-admin-pass"
+export const E2E_API_TOKEN = "e2e-api-token"
 
 export interface SlingFixtures {
   slingUrl: string
@@ -23,7 +29,7 @@ let url = ""
 let dataDir = ""
 
 // Global singleton server (workers=1 keeps tests serial)
-export const test = base.extend<SlingFixtures>({
+export const test = base.extend<SlingFixtures & { page: Page }>({
   slingUrl: async ({}, use) => {
     if (!serverProc) await startServer()
     await use(url)
@@ -34,8 +40,30 @@ export const test = base.extend<SlingFixtures>({
   csvPath: async ({ slingUrl: _u, dataDir: _d }, use) => {
     await use(join(dataDir, "orders.csv"))
   },
+  // every spec starts signed in: the cookie jar of the page context holds a
+  // real session issued by POST /api/auth/login
+  page: async ({ page, slingUrl }, use) => {
+    const resp = await page.request.post(`${slingUrl}/api/auth/login`, {
+      data: { username: "admin", password: E2E_ADMIN_PASS },
+    })
+    if (!resp.ok()) throw new Error(`e2e login failed: ${resp.status()}`)
+    await use(page)
+  },
 })
 export { expect }
+
+/** Resolve the sling-server binary path (Windows needs a real .exe). */
+export function serverBinary(): string {
+  const base = resolve(thisDir, "../../cmd/sling-server/sling-server")
+  if (process.platform !== "win32") return base
+  if (existsSync(base + ".exe")) return base + ".exe"
+  // Node's spawn cannot launch an extensionless PE binary (CreateProcess
+  // appends .exe and then fails); copy it so the suite is never
+  // stale-binary dependent.
+  const copy = join(mkdtempSync(join(tmpdir(), "sling-e2e-bin-")), "sling-server.exe")
+  copyFileSync(base, copy)
+  return copy
+}
 
 async function startServer() {
   dataDir = mkdtempSync(join(tmpdir(), "sling-e2e-"))
@@ -45,20 +73,7 @@ async function startServer() {
     "id,name,amount,updated_at\n1,alice,100,2026-01-01\n2,bob,200,2026-01-02\n3,carol,300,2026-01-03\n",
   )
 
-  // On Windows, Node's spawn cannot launch an extensionless PE binary
-  // (CreateProcess appends .exe and then fails). Prefer the repo's
-  // sling-server.exe build; fall back to copying the extensionless
-  // artifact to a temp .exe so the suite is never stale-binary dependent.
-  const base = resolve(thisDir, "../../cmd/sling-server/sling-server")
-  let bin = base
-  if (process.platform === "win32") {
-    if (existsSync(base + ".exe")) {
-      bin = base + ".exe"
-    } else if (existsSync(base)) {
-      bin = join(dataDir, "sling-server.exe")
-      copyFileSync(base, bin)
-    }
-  }
+  const bin = serverBinary()
 
   // A random port can collide with a long-running local instance (e.g. a
   // sling-server on 5888): the spawned child would die on bind while the
@@ -70,9 +85,17 @@ async function startServer() {
     const port = 15700 + Math.floor(Math.random() * 200)
     url = `http://127.0.0.1:${port}`
 
-    serverProc = spawn(bin, ["--port", String(port), "--workdir", join(dataDir, "data"), "--no-open"], {
-      stdio: ["ignore", "pipe", "pipe"],
-    })
+    serverProc = spawn(
+      bin,
+      [
+        "--port", String(port),
+        "--workdir", join(dataDir, "data"),
+        "--no-open",
+        "--admin-password", E2E_ADMIN_PASS,
+        "--token", E2E_API_TOKEN,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    )
     // Persist server output for debugging on failure (written to
     // dataDir/../server.log).
     const logStream = createWriteStream(join(dataDir, "server.log"), { flags: "a" })

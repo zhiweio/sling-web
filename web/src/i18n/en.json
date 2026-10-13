@@ -322,6 +322,8 @@
   "settings": {
     "title": "Settings",
     "subtitle": "Preferences & data management",
+    "account": "Account",
+    "accountRole": "Administrator",
     "language": "Language",
     "theme": "Theme",
     "themeLight": "Light",
@@ -517,6 +519,7 @@
       "duplicate": "Duplicate",
       "backup": "Backup",
       "prune": "Prune",
+      "login": "Sign in",
       "misfire": "Misfire skip"
     },
     "entity": {
@@ -525,7 +528,38 @@
       "setting": "Setting",
       "run": "Run",
       "channel": "Channel",
-      "backup": "Backup"
+      "backup": "Backup",
+      "admin": "Admin"
     }
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signInSub": "Use your administrator account to access the workbench",
+    "username": "Username",
+    "password": "Password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "signingIn": "Signing in…",
+    "invalidCredentials": "Invalid username or password",
+    "lockedOut": "Too many failed attempts. Try again in {{seconds}}s.",
+    "tagline": "Extract & load data between databases and files, right from your browser.",
+    "pointConnections": "Manage all your data source connections in one place",
+    "pointPipelines": "Design migration pipelines without writing YAML",
+    "pointMonitor": "Monitor runs and logs in real time",
+    "panelFooter": "sling-server · self-hosted data migration workbench",
+    "changePassword": "Change password",
+    "changePasswordSub": "Set a new password for the administrator account",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "passwordTooShort": "Password must be at least 8 characters",
+    "passwordMismatch": "Passwords do not match",
+    "changing": "Saving…",
+    "passwordChanged": "Password changed",
+    "passwordChangeFailed": "Could not change password",
+    "mustChangeNotice": "This deployment still uses the default password. Set a new one to continue.",
+    "logout": "Sign out",
+    "signedOut": "Signed out",
+    "account": "Account"
   }
 }

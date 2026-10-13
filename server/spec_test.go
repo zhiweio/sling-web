@@ -47,7 +47,7 @@ func TestEffectiveTarget(t *testing.T) {
 func newSpecApp(t *testing.T) (*App, string) {
 	t.Helper()
 	dir := testEnv(t)
-	app, err := New(Options{DBPath: filepath.Join(dir, "test.db"), Concurrency: 1})
+	app, err := New(Options{DBPath: filepath.Join(dir, "test.db"), Concurrency: 1, AdminPassword: testAdminPass})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}

@@ -58,7 +58,8 @@ behavior).
 
 ## Security Model
 
-- Binds to `127.0.0.1` only by default; for LAN deployment add `--token <random-secret>` (Bearer auth). In Docker the process binds `0.0.0.0` inside the container (`SLING_SERVER_HOST`), and `compose.yaml` keeps the host-side port on `127.0.0.1` unless `SLING_BIND` is changed
+- Login is always required: a single admin account protects the UI and the API. When no password is configured at deploy time, `admin/admin` is seeded and the first login is forced to change it; set `--admin-password <secret>` (env `SLING_SERVER_ADMIN_PASSWORD`, name via `--admin-user` / `SLING_SERVER_ADMIN_USER`) to pin the credential. Lost password: `--set-admin-password`
+- `--token <random-secret>` remains available as a Bearer credential for API clients (scripts, healthchecks). In Docker the process binds `0.0.0.0` inside the container (`SLING_SERVER_HOST`), and `compose.yaml` keeps the host-side port on `127.0.0.1` unless `SLING_BIND` is changed
 - Connection credentials: AES-256-GCM encrypted in `~/.sling/server.db`; the master key lives separately in `~/.sling/server.key` (0600)
 - Optional `--set-passphrase` wraps the master key with a passphrase (Argon2id)
 - Logs are automatically redacted (reusing the engine's `RedactLogLine`); APIs never return plaintext passwords
@@ -67,8 +68,9 @@ behavior).
 
 ```
 sling-server [--port 5666] [--host 127.0.0.1] [--workdir ~/.sling] [--no-open]
-             [--token SECRET] [--concurrency 4] [--stream-concurrency 1]
-             [--retention 90] [--set-passphrase]
+             [--token SECRET] [--admin-user admin] [--admin-password SECRET]
+             [--concurrency 4] [--stream-concurrency 1] [--retention 90]
+             [--set-passphrase] [--set-admin-password]
 sling-server version
 ```
 

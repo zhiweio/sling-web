@@ -5,7 +5,8 @@ import { test, expect } from "../helpers/env"
 test.describe("core migration journey", () => {
   test("connection wizard: create a local file source", async ({ page, slingUrl, dataDir }) => {
     await page.goto(`${slingUrl}/connections`)
-    await expect(page.getByRole("heading", { name: "Connections" })).toBeVisible()
+    // exact: the empty state's "No connections" h3 shares the substring
+    await expect(page.getByRole("heading", { name: "Connections", exact: true })).toBeVisible()
 
     await page.getByRole("button", { name: "New Connection" }).click()
     await page.getByRole("button", { name: "Local File System" }).click()

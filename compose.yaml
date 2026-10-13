@@ -9,10 +9,17 @@
 # Configuration — put overrides in a `.env` file next to this one (compose
 # reads it automatically):
 #
-#   SLING_SERVER_TOKEN  bearer token protecting the API — SET THIS before
-#                       publishing the port beyond localhost (default: unset = no auth)
+#   SLING_SERVER_ADMIN_PASSWORD  admin password — SET THIS before publishing
+#                                the port beyond localhost (default: unset =
+#                                seed admin/admin, password change forced at
+#                                first login)
+#   SLING_SERVER_ADMIN_USER      admin account name        (default: admin)
+#   SLING_SERVER_TOKEN           bearer token for API clients (scripts);
+#                                browser users always log in with the admin
+#                                account
 #   SLING_BIND          host interface to publish on     (default: 127.0.0.1;
-#                       set 0.0.0.0 for LAN access — together with a token)
+#                       set 0.0.0.0 for LAN access — together with an admin
+#                       password)
 #   SLING_PORT          host port                        (default: 5666)
 #   TZ                  timezone for the cron scheduler  (default: UTC)
 #   VERSION             version string + image tag       (default: dev)
@@ -37,6 +44,8 @@ services:
       - "${SLING_BIND:-127.0.0.1}:${SLING_PORT:-5666}:5666"
     environment:
       SLING_SERVER_TOKEN: ${SLING_SERVER_TOKEN:-}
+      SLING_SERVER_ADMIN_USER: ${SLING_SERVER_ADMIN_USER:-}
+      SLING_SERVER_ADMIN_PASSWORD: ${SLING_SERVER_ADMIN_PASSWORD:-}
       TZ: ${TZ:-UTC}
     volumes:
       - sling-data:/var/lib/sling

@@ -76,3 +76,11 @@
   given: a job in "Full Refresh" mode
   when: Run is clicked from the jobs list
   then: no confirmation pops up (the list queues it directly) — confirmation only appears on the wizard's first save-and-run; dangerous actions are always reversible (the cancel-run button works)
+
+- id: AC-011
+  priority: P0
+  feature: Login & single admin account
+  given: a deployment with the default admin account (no password configured)
+  when: the workbench is opened without a session
+  then: every route lands on the login page; a wrong password shows an inline error; signing in with the default credentials forces a password change before any workbench page renders; after the change, reloads stay signed in and Sign out returns to the login page
+  then_note: deployment can pin the admin password via --admin-password / SLING_SERVER_ADMIN_PASSWORD so no forced change occurs

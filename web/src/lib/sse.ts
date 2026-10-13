@@ -7,6 +7,7 @@ export interface SseHandlers {
   onLog?: (runId: string, line: { level: number; text: string }) => void
   onNotification?: (n: unknown) => void
   onJob?: (j: unknown) => void
+  onError?: () => void
 }
 
 export function useSSE(handlers: SseHandlers) {
@@ -38,6 +39,9 @@ export function useSSE(handlers: SseHandlers) {
     es.addEventListener("log", onLog as EventListener)
     es.addEventListener("notification", onNotification as EventListener)
     es.addEventListener("job", onJob as EventListener)
+    // the stream authenticates via session cookie; an error may mean the
+    // session expired, so re-probe it (the router decides what to do)
+    es.onerror = () => ref.current.onError?.()
 
     return () => {
       es.close()

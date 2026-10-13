@@ -83,8 +83,9 @@ Besides the CLI, this repository ships **sling-server**: a browser-based data
 migration workbench packed into the same single binary (Go server + embedded
 React UI, built on the unmodified sling engine). It gives non-technical users
 the full journey — connections, a 5-step migration wizard, scheduling, live
-run monitoring, and governance (encrypted credential vault, notifications,
-audit log, backups) — with an English/Chinese bilingual UI.
+run monitoring, and governance (login-protected single admin account,
+encrypted credential vault, notifications, audit log, backups) — with an
+English/Chinese bilingual UI.
 
 ```bash
 just build-server              # build the single binary (frontend embedded)
