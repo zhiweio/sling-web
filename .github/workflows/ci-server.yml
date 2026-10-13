@@ -1,18 +1,16 @@
 # CI for the sling-server workbench (server, web UI, e2e).
 # The upstream CLI workflows (build-test.yml etc.) run on self-hosted
 # runners and are untouched; this workflow uses GitHub-hosted runners.
+#
+# Trigger policy (keep Actions minutes low):
+#   - pull_request: the light jobs (web, lint, unit tests) gate the PR
+#     before merge; the merge push itself is not re-tested.
+#   - tag push (v*): full suite including the Playwright E2E job.
+#   - workflow_dispatch: light jobs only.
+# Direct pushes to main never trigger this workflow.
 name: Workbench CI
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "server/**"
-      - "web/**"
-      - "e2e/**"
-      - "cmd/sling-server/**"
-      - "justfile"
-      - ".github/workflows/ci-server.yml"
   pull_request:
     paths:
       - "server/**"
@@ -21,6 +19,9 @@ on:
       - "cmd/sling-server/**"
       - "justfile"
       - ".github/workflows/ci-server.yml"
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
 
 concurrency:
@@ -110,6 +111,8 @@ jobs:
 
   build-and-e2e:
     name: Build binary + Playwright E2E
+    # Expensive gate: release tags only (see the trigger policy above).
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     needs: [web]
     env:
