@@ -18,10 +18,12 @@ import {
   Play,
   PlayCircle,
   Plus,
+  TriangleAlert,
   Trash2,
 } from "lucide-react"
 import { api, ApiError } from "@/lib/api"
 import type { Job } from "@/lib/types"
+import { cn } from "@/lib/utils"
 import { PageHeader } from "@/features/dashboard"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -46,8 +48,10 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogMedia,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { confirmTablesText } from "@/features/jobs/spec-helpers"
 import { countdown, cronToHuman, relativeTime } from "@/lib/format"
 
 const PAGE_SIZE = 10
@@ -60,6 +64,7 @@ export default function Jobs() {
   const [sort, setSort] = useState("newest")
   const [page, setPage] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<Job | null>(null)
+  const [runTarget, setRunTarget] = useState<Job | null>(null)
   const [analyzeTarget, setAnalyzeTarget] = useState<Job | null>(null)
 
   const { data, isLoading } = useQuery({
@@ -175,7 +180,13 @@ export default function Jobs() {
         <>
           <div className="space-y-3">
             {pageItems.map((job) => (
-              <JobRow key={job.id} job={job} onDelete={() => setDeleteTarget(job)} onAnalyze={() => setAnalyzeTarget(job)} />
+              <JobRow
+                key={job.id}
+                job={job}
+                onRun={() => setRunTarget(job)}
+                onDelete={() => setDeleteTarget(job)}
+                onAnalyze={() => setAnalyzeTarget(job)}
+              />
             ))}
           </div>
           <ListPagination total={filtered.length} page={page} pages={pages} onPage={setPage} />
@@ -185,6 +196,8 @@ export default function Jobs() {
       {analyzeTarget && (
         <AnalysisDialog open onOpenChange={() => setAnalyzeTarget(null)} jobId={analyzeTarget.id} />
       )}
+
+      {runTarget && <RunConfirmDialog job={runTarget} onDone={() => setRunTarget(null)} />}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
         <AlertDialogContent>
@@ -227,9 +240,9 @@ function JobDeleteAction({ job, onDone }: { job: Job | null; onDone: () => void 
   )
 }
 
-function JobRow({ job, onDelete, onAnalyze }: { job: Job; onDelete: () => void; onAnalyze: () => void }) {
+/** Confirmation before a manual run: states what will run, and escalates to a warning for modes that overwrite target data. */
+function RunConfirmDialog({ job, onDone }: { job: Job; onDone: () => void }) {
   const { t } = useTranslation()
-  const nav = useNavigate()
   const qc = useQueryClient()
 
   const spec = useMemo(() => {
@@ -245,18 +258,109 @@ function JobRow({ job, onDelete, onAnalyze }: { job: Job; onDelete: () => void; 
     onSuccess: () => {
       toast.success(t("jobs.runTriggered", { name: job.name }))
       qc.invalidateQueries({ queryKey: ["runs"] })
-      // refresh the busy decoration so the button flips to disabled at once
       qc.invalidateQueries({ queryKey: ["jobs"] })
+      onDone()
     },
     onError: (e) => {
+      // instance started elsewhere (cron / another tab) between open and confirm
       if (e instanceof ApiError && e.status === 409) {
         toast.warning(t("jobs.alreadyRunningToast", { name: job.name }))
         qc.invalidateQueries({ queryKey: ["jobs"] })
+        onDone()
       } else {
         toast.error(e.message)
       }
     },
   })
+
+  const mode: string | undefined = spec?.defaults?.mode
+  // replace (drop & recreate) and truncate (clear rows) both overwrite target data
+  const destructive = mode === "replace" || mode === "truncate"
+  const modeLabel: Record<string, string> = {
+    replace: t("jobs.wizard.modeReplace"),
+    truncate: t("jobs.wizard.modeTruncate"),
+    append: t("jobs.wizard.modeAppend"),
+    upsert: t("jobs.wizard.modeUpsert"),
+    snapshot: t("jobs.wizard.modeSnapshot"),
+  }
+  const streamCount = spec?.streams?.length ?? 1
+
+  return (
+    <AlertDialog open onOpenChange={() => onDone()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogMedia
+            className={cn(
+              "size-11 rounded-lg",
+              destructive ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-primary/10 text-primary",
+            )}
+          >
+            {destructive ? <TriangleAlert className="size-5" /> : <Play className="size-5" />}
+          </AlertDialogMedia>
+          <AlertDialogTitle>{t("jobs.runConfirmTitle")}</AlertDialogTitle>
+          <AlertDialogDescription>{t("jobs.runConfirmBody")}</AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <div className="rounded-lg border bg-muted/40 px-3 py-2.5">
+          <div className="truncate text-sm font-medium">{job.name}</div>
+          <div className="mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+            <span className="truncate">{spec?.source_conn}</span>
+            <ArrowRight className="size-3 shrink-0" />
+            <span className="truncate">{spec?.target_conn}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Badge variant="outline" className="text-[10px]">
+              {modeLabel[mode ?? ""] ?? mode ?? "-"}
+            </Badge>
+            {streamCount > 1 && (
+              <Badge variant="outline" className="text-[10px]">
+                {t("jobs.streams", { count: streamCount })}
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        {destructive && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-amber-600/25 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-400/10 dark:text-amber-200">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>
+              {mode === "truncate"
+                ? t("jobs.runConfirmBodyTruncate", { table: confirmTablesText(spec, t) })
+                : t("jobs.runConfirmBodyDestructive", { table: confirmTablesText(spec, t) })}
+            </span>
+          </div>
+        )}
+
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("app.actions.cancelEdit")}</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={run.isPending}
+            onClick={(e) => {
+              e.preventDefault()
+              run.mutate()
+            }}
+          >
+            {run.isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+            {t("jobs.runConfirmAction")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+function JobRow({ job, onRun, onDelete, onAnalyze }: { job: Job; onRun: () => void; onDelete: () => void; onAnalyze: () => void }) {
+  const { t } = useTranslation()
+  const nav = useNavigate()
+  const qc = useQueryClient()
+
+  const spec = useMemo(() => {
+    try {
+      return JSON.parse(job.spec_json ?? "{}")
+    } catch {
+      return {}
+    }
+  }, [job.spec_json])
 
   // an instance is queued or running server-side: block duplicate triggers
   const activeRunState = job.active_run_state
@@ -356,13 +460,8 @@ function JobRow({ job, onDelete, onAnalyze }: { job: Job; onDelete: () => void; 
       </div>
 
       <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
-        <Button
-          size="sm"
-          onClick={() => run.mutate()}
-          disabled={run.isPending || busy}
-          title={busy ? t("jobs.alreadyRunning") : t("app.actions.run")}
-        >
-          {run.isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+        <Button size="sm" onClick={onRun} disabled={busy} title={busy ? t("jobs.alreadyRunning") : t("app.actions.run")}>
+          <Play className="size-4" />
         </Button>
         {job.schedule_enabled && (
           <Button size="sm" variant="ghost" onClick={() => toggleSchedule.mutate()} title={t("app.actions.pause")}>

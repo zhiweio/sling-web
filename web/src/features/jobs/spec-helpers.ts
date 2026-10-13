@@ -63,3 +63,15 @@ export function splitObject(obj: string): { schema: string; table: string } {
   if (idx <= 0) return { schema: "", table: obj }
   return { schema: obj.slice(0, idx), table: obj.slice(idx + 1) }
 }
+
+/** Target table list for destructive-run confirmations: truncated to the first 5 + remaining count to keep the dialog short */
+export function confirmTablesText(
+  spec: {
+    streams?: { source_object?: string; target_object?: string; disabled?: boolean }[]
+  },
+  t: (key: string, vars?: Record<string, unknown>) => string,
+): string {
+  const tables = (spec.streams ?? []).filter((s) => !s.disabled).map((s) => s.target_object || s.source_object || "")
+  if (tables.length <= 5) return tables.join(", ")
+  return t("jobs.runConfirmTablesMore", { tables: tables.slice(0, 5).join(", "), count: tables.length - 5 })
+}

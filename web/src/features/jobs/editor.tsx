@@ -48,7 +48,7 @@ import { AnalysisDialog } from "@/features/jobs/analysis-dialog"
 import { ConnPicker } from "@/features/jobs/conn-picker"
 import { TableTreePicker, type PickerSchema } from "@/features/jobs/table-tree-picker"
 import { MappingTable } from "@/features/jobs/mapping-table"
-import { effectiveTarget, hasWildcard, isQuerySrc, mappingIssues } from "@/features/jobs/spec-helpers"
+import { confirmTablesText, effectiveTarget, hasWildcard, isQuerySrc, mappingIssues } from "@/features/jobs/spec-helpers"
 import { cn } from "@/lib/utils"
 import { cronToHuman } from "@/lib/format"
 
@@ -1335,13 +1335,6 @@ function isDbConn(name: string, conns?: Connection[]) {
 
 function streamsOf(spec: JobSpec): StreamSpec[] {
   return (spec.streams ?? []).filter((s) => !s.disabled)
-}
-
-/** Target table list for the destructive-run confirmation: truncated to the first 5 + remaining count in batch mode to keep the dialog short */
-function confirmTablesText(spec: JobSpec, t: (k: string, v?: Record<string, unknown>) => string): string {
-  const tables = streamsOf(spec).map((s) => s.target_object || s.source_object || "")
-  if (tables.length <= 5) return tables.join(", ")
-  return t("jobs.runConfirmTablesMore", { tables: tables.slice(0, 5).join(", "), count: tables.length - 5 })
 }
 
 function cap(s: string) {
