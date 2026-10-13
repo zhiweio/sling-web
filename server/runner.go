@@ -288,8 +288,13 @@ func (r *Runner) CancelAll() {
 
 func (h *RunHandle) Status() sling.ExecStatus { return h.currentStatus() }
 
+// IsFinished reports whether the run reached a terminal state. core's
+// ExecStatus.IsFinished does not count "cancelled" as finished, but a
+// cancelled run is over for the server: without this, cancelled handles
+// would count as active forever (run-center badge, shutdown grace wait).
 func (h *RunHandle) IsFinished() bool {
-	return h.currentStatus().IsFinished()
+	s := h.currentStatus()
+	return s.IsFinished() || s == sling.ExecStatusCancelled
 }
 
 func (h *RunHandle) Err() error {

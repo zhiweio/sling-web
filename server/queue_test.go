@@ -208,3 +208,29 @@ func TestCancelBeforeRunStartsDoesNotPanic(t *testing.T) {
 	}
 	t.Fatal("cancel did not propagate to the run context")
 }
+
+func TestCancelledRunDoesNotStayActive(t *testing.T) {
+	app := newTestApp(t)
+	h := fakeActiveRun("run-cancelled-active", "")
+	if !app.Runner.register(h) {
+		t.Fatal("register must succeed")
+	}
+	t.Cleanup(func() { h.setStatus(sling.ExecStatusCancelled) })
+
+	if n := len(app.Runner.Active()); n != 1 {
+		t.Fatalf("active runs while running: %d, want 1", n)
+	}
+
+	// once the run ends up cancelled it is terminal: it must not keep
+	// counting as active (run-center badge) nor accept another cancel
+	h.setStatus(sling.ExecStatusCancelled)
+	if !h.IsFinished() {
+		t.Fatal("cancelled run must report finished")
+	}
+	if n := len(app.Runner.Active()); n != 0 {
+		t.Fatalf("active runs after cancel: %d, want 0", n)
+	}
+	if app.Runner.Cancel(h.ID) {
+		t.Fatal("cancel of a cancelled run must report false")
+	}
+}
